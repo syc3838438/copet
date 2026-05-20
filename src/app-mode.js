@@ -10,7 +10,7 @@ function resolveAppMode(options = {}) {
   return {
     id: standalonePet ? "standalone-pet" : "full",
     standalonePet,
-    productName: standalonePet ? "CoPets Runner" : "Clawd on Desk",
+    productName: standalonePet ? "CoPets 桌宠" : "Clawd on Desk",
     features: {
       agents: !standalonePet,
       dashboard: !standalonePet,

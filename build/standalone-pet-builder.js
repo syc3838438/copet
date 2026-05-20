@@ -5,7 +5,7 @@ const baseBuild = pkg.build || {};
 module.exports = {
   ...baseBuild,
   appId: "com.copets.runner",
-  productName: "CoPets Runner",
+  productName: "CoPets 桌宠",
   executableName: "copets-runner",
   directories: {
     ...(baseBuild.directories || {}),
@@ -13,7 +13,7 @@ module.exports = {
   },
   extraMetadata: {
     name: "copets-runner",
-    description: "Standalone desktop runner for Codex Pets themes.",
+    description: "可导入 Codex 桌宠包的独立桌宠软件。",
     main: "src/main-standalone-pet.js",
   },
   files: [

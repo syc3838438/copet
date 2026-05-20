@@ -7,11 +7,11 @@ const gestureRouter = window.CoPetsGestureRouter;
 
 const DEFAULT_BEHAVIOR = {
   triggers: {
-    singleClick: "focusTerminal",
+    singleClick: "sideClick",
     doubleClick: "annoyedOrSideClick",
     multiClick: "double",
     dragStart: "drag",
-    rightClick: "contextMenu",
+    rightClick: "quickMenu",
   },
 };
 
@@ -19,6 +19,10 @@ const DEFAULT_BEHAVIOR = {
 let tc = window.hitThemeConfig || {};
 let _reactions = (tc && tc.reactions) || {};
 let _behavior = normalizeBehavior(tc && tc.behavior);
+
+function isStandalonePet() {
+  return !!(tc && tc.standalonePet);
+}
 
 // Theme switch: IPC push overrides additionalArguments
 if (window.hitAPI && window.hitAPI.onThemeConfig) {
@@ -63,7 +67,9 @@ window.hitAPI.onStateSync((data) => {
 let isDragging = false;
 let didDrag = false;
 let mouseDownX, mouseDownY;
+let lastPointerX, lastPointerY;
 let dragGesture = null;
+let activeDragAction = null;
 let dragMoveRAF = null;
 const DRAG_THRESHOLD = gestureRouter && gestureRouter.DEFAULT_DRAG_THRESHOLD_PX
   ? gestureRouter.DEFAULT_DRAG_THRESHOLD_PX
@@ -104,8 +110,11 @@ area.addEventListener("pointerdown", (e) => {
     isDragging = true;
     didDrag = false;
     dragGesture = null;
+    activeDragAction = null;
     mouseDownX = e.clientX;
     mouseDownY = e.clientY;
+    lastPointerX = e.clientX;
+    lastPointerY = e.clientY;
     window.hitAPI.dragLock(true);
     area.classList.add("dragging");
   }
@@ -113,15 +122,27 @@ area.addEventListener("pointerdown", (e) => {
 
 document.addEventListener("pointermove", (e) => {
   if (isDragging) {
+    const totalDx = e.clientX - mouseDownX;
+    const totalDy = e.clientY - mouseDownY;
+    const stepDx = e.clientX - lastPointerX;
+    const stepDy = e.clientY - lastPointerY;
     if (!didDrag) {
-      const totalDx = e.clientX - mouseDownX;
-      const totalDy = e.clientY - mouseDownY;
       if (Math.abs(totalDx) > DRAG_THRESHOLD || Math.abs(totalDy) > DRAG_THRESHOLD) {
         didDrag = true;
         dragGesture = createDragGesture(totalDx, totalDy);
-        startDragReaction(dragGesture);
+        applyDragGesture(dragGesture);
+      }
+    } else {
+      const nextGesture = createDragGestureForMove(totalDx, totalDy, stepDx, stepDy);
+      if (shouldApplyDragGesture(nextGesture, dragGesture)) {
+        dragGesture = nextGesture;
+        applyDragGesture(dragGesture);
+      } else {
+        dragGesture = nextGesture;
       }
     }
+    lastPointerX = e.clientX;
+    lastPointerY = e.clientY;
     queueDragMove();
   }
 });
@@ -131,6 +152,7 @@ function stopDrag() {
   clearQueuedDragMove();
   isDragging = false;
   dragGesture = null;
+  activeDragAction = null;
   window.hitAPI.dragLock(false);
   area.classList.remove("dragging");
   if (didDrag) {
@@ -183,6 +205,14 @@ function _resolveGestureAction(gesture, fallback) {
   return _getTriggerAction(trigger, fallback);
 }
 
+function _resolveGesture(gesture, fallback) {
+  if (gestureRouter && typeof gestureRouter.resolveTriggerAction === "function") {
+    return gestureRouter.resolveTriggerAction(_behavior, gesture, fallback);
+  }
+  const action = _resolveGestureAction(gesture, fallback);
+  return { action, trigger: null };
+}
+
 function createClickGesture(clickCount, side) {
   return {
     kind: "click",
@@ -191,17 +221,50 @@ function createClickGesture(clickCount, side) {
   };
 }
 
-function createDragGesture(dx, dy) {
+function classifyDragDirection(dx, dy) {
+  return gestureRouter && typeof gestureRouter.classifyDragDirection === "function"
+    ? gestureRouter.classifyDragDirection(dx, dy)
+    : (Math.abs(dx) >= DRAG_THRESHOLD && Math.abs(dx) >= Math.abs(dy) ? (dx < 0 ? "left" : "right") : null);
+}
+
+function createDragGesture(dx, dy, directionOverride) {
   const drag = gestureRouter && typeof gestureRouter.classifyDrag === "function"
     ? gestureRouter.classifyDrag(dx, dy)
     : { dx, dy, direction: null, primaryAxis: Math.abs(dx) >= Math.abs(dy) ? "x" : "y" };
+  if (directionOverride === "left" || directionOverride === "right") {
+    drag.direction = directionOverride;
+    drag.primaryAxis = "x";
+  }
   return {
     kind: "drag",
     drag,
   };
 }
 
+function createDragGestureForMove(totalDx, totalDy, stepDx, stepDy) {
+  const stepDirection = classifyDragDirection(stepDx, stepDy);
+  return createDragGesture(totalDx, totalDy, stepDirection);
+}
+
+function getDragDirection(gesture) {
+  return gesture && gesture.drag && (gesture.drag.direction === "left" || gesture.drag.direction === "right")
+    ? gesture.drag.direction
+    : null;
+}
+
+function shouldApplyDragGesture(nextGesture, previousGesture) {
+  const nextDirection = getDragDirection(nextGesture);
+  if (!nextDirection) return false;
+  return nextDirection !== getDragDirection(previousGesture);
+}
+
 function getGestureSide(meta) {
+  if (meta && meta.quickAction && meta.side === "random") {
+    return Math.random() < 0.5 ? "left" : "right";
+  }
+  if (meta && (meta.side === "left" || meta.side === "right")) {
+    return meta.side;
+  }
   const gesture = meta && meta.gesture;
   if (gesture && (gesture.side === "left" || gesture.side === "right")) {
     return gesture.side;
@@ -243,6 +306,16 @@ function performAction(action, meta = {}) {
     case "contextMenu":
       window.hitAPI.showContextMenu();
       return true;
+    case "quickMenu":
+      if (window.hitAPI && typeof window.hitAPI.showPetQuickMenu === "function") {
+        window.hitAPI.showPetQuickMenu({
+          clientX: Number.isFinite(meta.clientX) ? meta.clientX : null,
+          clientY: Number.isFinite(meta.clientY) ? meta.clientY : null,
+        });
+      } else {
+        window.hitAPI.showContextMenu();
+      }
+      return true;
     case "dashboard":
       window.hitAPI.showDashboard();
       return true;
@@ -280,8 +353,9 @@ function handleClick(clientX) {
   }
   if (isReacting || isDragReacting) return;
 
-  // Non-idle: focus terminal, no reaction
-  if (currentState !== "idle") {
+  // In full Clawd mode, non-idle clicks still jump back to the active session.
+  // Standalone CoPets is a pure desktop pet: clicks always remain interactions.
+  if (!isStandalonePet() && currentState !== "idle") {
     window.hitAPI.focusTerminal();
     return;
   }
@@ -324,16 +398,24 @@ function playReaction(svg, duration) {
 }
 
 // --- Drag reaction ---
-function startDragReaction(gesture) {
-  if (isDragReacting) return;
+function applyDragGesture(gesture) {
   if (dndEnabled) return;
 
-  if (isReacting) {
+  const dragStartGesture = gesture || dragGesture || createDragGesture(0, 0);
+  const resolved = _resolveGesture(dragStartGesture, "drag");
+  const action = resolved.action || "drag";
+  if (action === activeDragAction && action === "drag" && isDragReacting) return;
+
+  if (isDragReacting && action !== "drag") {
+    endDragReaction();
+  }
+
+  if (isReacting && action !== activeDragAction) {
     isReacting = false;
   }
 
-  const dragStartGesture = gesture || dragGesture || createDragGesture(0, 0);
-  performAction(_resolveGestureAction(dragStartGesture, "drag"), {
+  activeDragAction = action;
+  performAction(action, {
     fromDragStart: true,
     gesture: dragStartGesture,
   });
@@ -342,13 +424,31 @@ function startDragReaction(gesture) {
 function endDragReaction() {
   if (!isDragReacting) return;
   isDragReacting = false;
+  if (!isDragging) activeDragAction = null;
   window.hitAPI.endDragReaction();
 }
 
 // --- Right-click context menu ---
 document.addEventListener("contextmenu", (e) => {
   e.preventDefault();
-  performAction(_resolveGestureAction({ kind: "contextMenu" }, "contextMenu"), {
-    gesture: { kind: "contextMenu" },
+  const gesture = { kind: "contextMenu", clientX: e.clientX, clientY: e.clientY };
+  performAction(_resolveGestureAction(gesture, isStandalonePet() ? "quickMenu" : "contextMenu"), {
+    gesture,
+    clientX: e.clientX,
+    clientY: e.clientY,
   });
 });
+
+if (window.hitAPI && typeof window.hitAPI.onQuickAction === "function") {
+  window.hitAPI.onQuickAction((payload = {}) => {
+    const action = typeof payload.action === "string" ? payload.action : "none";
+    if (action === "none") return;
+    performAction(action, {
+      quickAction: true,
+      side: payload.side,
+      gesture: payload.side === "left" || payload.side === "right"
+        ? createClickGesture(1, payload.side)
+        : null,
+    });
+  });
+}

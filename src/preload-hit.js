@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld("hitAPI", {
   dragMove: () => ipcRenderer.send("drag-move"),
   dragEnd: () => ipcRenderer.send("drag-end"),
   showContextMenu: () => ipcRenderer.send("show-context-menu"),
+  showPetQuickMenu: (payload) => ipcRenderer.send("show-pet-quick-menu", payload || {}),
   focusTerminal: () => ipcRenderer.send("focus-terminal"),
   exitMiniMode: () => ipcRenderer.send("exit-mini-mode"),
   showDashboard: () => ipcRenderer.send("show-dashboard"),
@@ -24,4 +25,5 @@ contextBridge.exposeInMainWorld("hitAPI", {
   // State sync ← main
   onStateSync: (cb) => ipcRenderer.on("hit-state-sync", (_, data) => cb(data)),
   onCancelReaction: (cb) => ipcRenderer.on("hit-cancel-reaction", () => cb()),
+  onQuickAction: (cb) => ipcRenderer.on("pet-quick-action", (_, payload) => cb(payload || {})),
 });

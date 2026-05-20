@@ -5,11 +5,11 @@
 
   const DEFAULT_BEHAVIOR = {
     triggers: {
-      singleClick: "focusTerminal",
+      singleClick: "sideClick",
       doubleClick: "annoyedOrSideClick",
       multiClick: "double",
       dragStart: "drag",
-      rightClick: "contextMenu",
+      rightClick: "quickMenu",
     },
   };
 
@@ -44,9 +44,7 @@
 
   const ACTION_OPTIONS = [
     { value: "none", label: "不执行动作" },
-    { value: "focusTerminal", label: "聚焦会话" },
-    { value: "contextMenu", label: "打开菜单" },
-    { value: "dashboard", label: "打开仪表盘" },
+    { value: "quickMenu", label: "打开互动菜单" },
     { value: "drag", label: "播放拖动动画" },
     { value: "sideClick", label: "按点击侧播放戳戳" },
     { value: "clickLeft", label: "播放左戳动画" },

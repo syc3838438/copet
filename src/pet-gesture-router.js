@@ -13,11 +13,11 @@
   const DEFAULT_DRAG_AXIS_RATIO = 1.2;
 
   const DEFAULT_TRIGGER_ACTIONS = Object.freeze({
-    singleClick: "focusTerminal",
+    singleClick: "sideClick",
     doubleClick: "annoyedOrSideClick",
     multiClick: "double",
     dragStart: "drag",
-    rightClick: "contextMenu",
+    rightClick: "quickMenu",
   });
 
   const DIRECTIONAL_TRIGGER_BY_BASE = Object.freeze({

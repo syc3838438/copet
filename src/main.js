@@ -39,6 +39,7 @@ const createThemeFadeSequencer = require("./theme-fade-sequencer");
 const createThemeRuntime = require("./theme-runtime");
 const createFloatingWindowRuntime = require("./floating-window-runtime");
 const createPetWindowRuntime = require("./pet-window-runtime");
+const createPetQuickMenuRuntime = require("./pet-quick-menu");
 const {
   getFocusableLocalHudSessionIds: selectFocusableLocalHudSessionIds,
   getSessionFocusTarget,
@@ -91,6 +92,7 @@ const SIZES = {
 // a subscriber wired after menu.js loads. The ctx setters route writes through
 // `_settingsController.applyUpdate()`, which auto-persists.
 const prefsModule = require("./prefs");
+const { normalizePetBehavior } = require("./pet-behavior");
 const { createSettingsController } = require("./settings-controller");
 const { createTranslator, i18n } = require("./i18n");
 const {
@@ -181,6 +183,7 @@ let themeRuntime = null;
 let agentRuntime = null;
 let agentRegistry = null;
 let floatingWindowRuntime = null;
+let petQuickMenuRuntime = null;
 let codexPetMain = null;
 let telegramApprovalSidecar = null;
 let telegramApprovalSyncPromise = Promise.resolve();
@@ -280,6 +283,25 @@ function hydrateSystemBackedSettings() {
   });
   if (result && result.status === "error") {
     console.warn("Clawd: openAtLogin hydration failed:", result.message);
+  }
+}
+
+function hydrateStandalonePetDefaults() {
+  if (!STANDALONE_PET_MODE) return;
+  const partial = {};
+  const snapshot = _settingsController.getSnapshot();
+  if (!snapshot || snapshot.lang !== "zh") partial.lang = "zh";
+  const normalizedBehavior = normalizePetBehavior(snapshot && snapshot.petBehavior);
+  if (normalizedBehavior && JSON.stringify(normalizedBehavior) !== JSON.stringify(snapshot && snapshot.petBehavior)) {
+    partial.petBehavior = normalizedBehavior;
+  }
+  if (Object.keys(partial).length > 0) {
+    const result = _settingsController.hydrate(partial);
+    if (result && typeof result.then === "function") {
+      result.catch((err) => console.warn("CoPets: standalone defaults hydrate failed:", err && err.message));
+    } else if (result && result.status === "error") {
+      console.warn("CoPets: standalone defaults hydrate failed:", result.message);
+    }
   }
 }
 
@@ -432,6 +454,7 @@ function getHitRendererConfig() {
   return {
     ...(themeRuntime.getHitRendererConfig() || {}),
     behavior: _settingsController.get("petBehavior"),
+    standalonePet: STANDALONE_PET_MODE,
   };
 }
 
@@ -1631,6 +1654,20 @@ const { t, buildContextMenu, buildTrayMenu, rebuildAllMenus, createTray,
         requestAppQuit, applyDockVisibility } = _menu;
 
 // ── Settings effect router ──
+petQuickMenuRuntime = createPetQuickMenuRuntime({
+  BrowserWindow,
+  ipcMain,
+  screen,
+  path,
+  guardAlwaysOnTop,
+  keepOutOfTaskbar,
+  getDoNotDisturb: () => doNotDisturb,
+  enableDoNotDisturb: () => enableDoNotDisturb(),
+  disableDoNotDisturb: () => disableDoNotDisturb(),
+  openSettingsWindow: () => settingsWindowRuntime.open(),
+  sendToHitWin,
+});
+
 const SETTINGS_MIRROR_SETTERS = {
   lang: (v) => { lang = v; }, size: (v) => { currentSize = v; }, showTray: (v) => { showTray = v; },
   showDock: (v) => { showDock = v; }, manageClaudeHooksAutomatically: (v) => { manageClaudeHooksAutomatically = v; },
@@ -1943,6 +1980,10 @@ function createWindow() {
   registerPetInteractionIpc({
     ipcMain,
     showContextMenu: (event) => showPetContextMenu(event),
+    showPetQuickMenu: (event, payload) => {
+      if (STANDALONE_PET_MODE && petQuickMenuRuntime) petQuickMenuRuntime.show(event, payload);
+      else showPetContextMenu(event);
+    },
     moveWindowForDrag: () => moveWindowForDrag(),
     setIdlePaused: (value) => { idlePaused = !!value; },
     setLowPowerIdlePaused,
@@ -2196,6 +2237,7 @@ if (!gotTheLock) {
     // Must run before createWindow() so the first menu draw sees the
     // hydrated value rather than the schema default.
     hydrateSystemBackedSettings();
+    hydrateStandalonePetDefaults();
 
     permDebugLog = path.join(app.getPath("userData"), "permission-debug.log");
     updateDebugLog = path.join(app.getPath("userData"), "update-debug.log");
@@ -2252,6 +2294,7 @@ if (!gotTheLock) {
     _mini.cleanup();
     _sessionHud.cleanup();
     agentRuntime.cleanup();
+    if (petQuickMenuRuntime) petQuickMenuRuntime.cleanup();
     topmostRuntime.cleanup();
     themeRuntime.cleanup();
     _focus.cleanup();

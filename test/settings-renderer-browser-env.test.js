@@ -2643,9 +2643,9 @@ describe("settings renderer browser environment", () => {
     assert.ok(strings.en.themeImportUserThemeZipHint.includes("theme.json"));
     assert.strictEqual(strings.en.themeOpenUserThemesFolder, "Open themes folder");
     assert.strictEqual(strings.en.themeRefreshThemes, "Refresh themes");
-    assert.strictEqual(strings.zh.themeImportPetZip, "导入 Codex Pet 包（.zip）");
-    assert.strictEqual(strings.zh.themeActionGroupCodexPets, "Codex Pets");
-    assert.strictEqual(strings.zh.themeImportUserThemeZip, "导入 Clawd 主题包（.zip）");
+    assert.strictEqual(strings.zh.themeImportPetZip, "导入 Codex 桌宠包（.zip）");
+    assert.strictEqual(strings.zh.themeActionGroupCodexPets, "Codex 桌宠包");
+    assert.strictEqual(strings.zh.themeImportUserThemeZip, "导入本地主题包（.zip）");
     assert.ok(strings.zh.themeImportUserThemeZipHint.includes("theme.json"));
     assert.strictEqual(strings.zh.themeOpenUserThemesFolder, "打开主题文件夹");
   });

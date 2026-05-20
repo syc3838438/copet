@@ -65,6 +65,37 @@
     subtitle.textContent = t("settingsSubtitle");
     parent.appendChild(subtitle);
 
+    if (isStandalonePet()) {
+      parent.appendChild(helpers.buildSection(t("sectionAppearance"), [
+        buildLanguageRow(),
+        buildSizeSliderRow(),
+        buildSoundGroup(),
+        helpers.buildSwitchRow({
+          key: "lowPowerIdleMode",
+          labelKey: "rowLowPowerIdleMode",
+          descKey: "rowLowPowerIdleModeDesc",
+        }),
+        helpers.buildSwitchRow({
+          key: "allowEdgePinning",
+          labelKey: "rowAllowEdgePinning",
+          descKey: "rowAllowEdgePinningDesc",
+        }),
+        helpers.buildSwitchRow({
+          key: "keepSizeAcrossDisplays",
+          labelKey: "rowKeepSizeAcrossDisplays",
+          descKey: "rowKeepSizeAcrossDisplaysDesc",
+        }),
+      ]));
+      parent.appendChild(helpers.buildSection(t("sectionStartup"), [
+        helpers.buildSwitchRow({
+          key: "openAtLogin",
+          labelKey: "rowOpenAtLogin",
+          descKey: "rowOpenAtLoginDesc",
+        }),
+      ]));
+      return;
+    }
+
     parent.appendChild(helpers.buildSection(t("sectionAppearance"), [
       buildLanguageRow(),
       buildSizeSliderRow(),
@@ -129,6 +160,14 @@
         descKey: "rowBubbleFollowDesc",
       }),
     ]));
+  }
+
+  function isStandalonePet() {
+    return !!(
+      window.settingsAPI
+      && window.settingsAPI.appMode
+      && window.settingsAPI.appMode.standalonePet
+    );
   }
 
   function confirmDisableClaudeHookManagement(nextRaw) {

@@ -590,6 +590,24 @@ const i18n = {
 
 const SUPPORTED_LANGS = Object.freeze(["en", "zh", "zh-TW", "ko", "ja"]);
 
+Object.assign(i18n.zh, {
+  wake: "唤醒桌宠",
+  sleep: "休眠",
+  hideBubbles: "隐藏提示",
+  openDashboard: "打开面板",
+  startOnLogin: "开机自启",
+  soundEffects: "音效",
+  showPet: "显示桌宠",
+  hidePet: "隐藏桌宠",
+  settings: "设置",
+  quit: "退出",
+  miniMode: "迷你模式",
+  exitMiniMode: "退出迷你模式",
+  bringPetToPrimaryDisplay: "回到主屏",
+  showInMenuBar: "在菜单栏显示",
+  showInDock: "在 Dock 显示",
+});
+
 function createTranslator(getLang) {
   if (typeof getLang !== "function") {
     throw new TypeError("createTranslator(getLang): getLang must be a function");

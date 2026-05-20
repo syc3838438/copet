@@ -34,6 +34,19 @@
     });
   }
 
+  function isStandalonePet() {
+    return !!(
+      window.settingsAPI
+      && window.settingsAPI.appMode
+      && window.settingsAPI.appMode.standalonePet
+    );
+  }
+
+  function getVisibleShortcutActionIds() {
+    if (!isStandalonePet()) return i18n.SHORTCUT_ACTION_IDS;
+    return i18n.SHORTCUT_ACTION_IDS.filter((actionId) => actionId === "togglePet");
+  }
+
   function buildShortcutRow(actionId) {
     const row = document.createElement("div");
     row.className = "row shortcut-row";
@@ -134,11 +147,13 @@
     ));
     parent.appendChild(head);
 
-    const rows = i18n.SHORTCUT_ACTION_IDS.map((actionId) => buildShortcutRow(actionId));
-    rows.push(buildFixedKeyRow("shortcutLabelBubbleNextOption", "Tab / ↓"));
-    rows.push(buildFixedKeyRow("shortcutLabelBubblePrevOption", "Shift+Tab / ↑"));
-    rows.push(buildFixedKeyRow("shortcutLabelBubbleToggleOption", "Space"));
-    rows.push(buildFixedKeyRow("shortcutLabelBubbleSubmit", "Enter"));
+    const rows = getVisibleShortcutActionIds().map((actionId) => buildShortcutRow(actionId));
+    if (!isStandalonePet()) {
+      rows.push(buildFixedKeyRow("shortcutLabelBubbleNextOption", "Tab / ↓"));
+      rows.push(buildFixedKeyRow("shortcutLabelBubblePrevOption", "Shift+Tab / ↑"));
+      rows.push(buildFixedKeyRow("shortcutLabelBubbleToggleOption", "Space"));
+      rows.push(buildFixedKeyRow("shortcutLabelBubbleSubmit", "Enter"));
+    }
     parent.appendChild(helpers.buildSection("", rows));
   }
 

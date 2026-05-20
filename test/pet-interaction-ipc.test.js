@@ -44,6 +44,7 @@ function createHarness(overrides = {}) {
   const runtime = registerPetInteractionIpc({
     ipcMain,
     showContextMenu: (event) => calls.push(["showContextMenu", event.sender]),
+    showPetQuickMenu: (event, payload) => calls.push(["showPetQuickMenu", event.sender, payload]),
     moveWindowForDrag: () => calls.push(["moveWindowForDrag"]),
     setIdlePaused: (value) => calls.push(["setIdlePaused", value]),
     isMiniTransitioning: () => state.miniTransitioning,
@@ -96,6 +97,7 @@ test("pet interaction IPC registers owned channels and disposes them", () => {
     "play-click-reaction",
     "resume-from-reaction",
     "show-context-menu",
+    "show-pet-quick-menu",
     "start-drag-reaction",
   ]);
 
@@ -108,6 +110,7 @@ test("pet interaction IPC delegates menu, drag move, reaction pause, and rendere
   const { ipcMain, calls, state } = createHarness();
 
   ipcMain.send("show-context-menu");
+  ipcMain.send("show-pet-quick-menu", { clientX: 12, clientY: 18 });
   ipcMain.send("drag-move");
   ipcMain.send("pause-cursor-polling");
   ipcMain.send("resume-from-reaction");
@@ -121,6 +124,7 @@ test("pet interaction IPC delegates menu, drag move, reaction pause, and rendere
 
   assert.deepStrictEqual(calls, [
     ["showContextMenu", "sender-web-contents"],
+    ["showPetQuickMenu", "sender-web-contents", { clientX: 12, clientY: 18 }],
     ["moveWindowForDrag"],
     ["setIdlePaused", true],
     ["setIdlePaused", false],

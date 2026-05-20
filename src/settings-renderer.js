@@ -17,6 +17,7 @@ const SIDEBAR_TABS = [
   { id: "remote-ssh", icon: "\u{1F50C}", labelKey: "sidebarRemoteSsh", feature: "remoteSsh", available: true },
   { id: "about", icon: "\u2139", labelKey: "sidebarAbout", feature: null, available: true },
 ];
+const STANDALONE_TAB_IDS = new Set(["general", "theme", "behavior", "animMap", "animOverrides", "shortcuts", "about"]);
 
 function isFeatureEnabled(featureName) {
   if (!featureName) return true;
@@ -24,7 +25,10 @@ function isFeatureEnabled(featureName) {
 }
 
 function getSidebarTabs() {
-  return SIDEBAR_TABS.filter((tab) => isFeatureEnabled(tab.feature));
+  return SIDEBAR_TABS.filter((tab) =>
+    (!APP_MODE.standalonePet || STANDALONE_TAB_IDS.has(tab.id))
+    && isFeatureEnabled(tab.feature)
+  );
 }
 
 function ensureVisibleActiveTab() {

@@ -9,14 +9,14 @@ const {
   validatePetBehavior,
 } = require("../src/pet-behavior");
 
-test("default pet behavior keeps legacy generic triggers only", () => {
+test("default pet behavior uses visible standalone desktop-pet actions", () => {
   assert.deepStrictEqual(cloneDefaultBehavior(), {
     triggers: {
-      singleClick: "focusTerminal",
+      singleClick: "sideClick",
       doubleClick: "annoyedOrSideClick",
       multiClick: "double",
       dragStart: "drag",
-      rightClick: "contextMenu",
+      rightClick: "quickMenu",
     },
   });
 });
@@ -36,11 +36,11 @@ test("pet behavior accepts directional click and drag triggers", () => {
   assert.deepStrictEqual(validatePetBehavior(behavior), { status: "ok" });
   assert.deepStrictEqual(normalizePetBehavior(behavior), {
     triggers: {
-      singleClick: "focusTerminal",
+      singleClick: "sideClick",
       doubleClick: "annoyedOrSideClick",
       multiClick: "double",
       dragStart: "drag",
-      rightClick: "contextMenu",
+      rightClick: "quickMenu",
       singleClickLeft: "clickLeft",
       singleClickRight: "clickRight",
       doubleClickLeft: "clickLeft",
@@ -49,6 +49,29 @@ test("pet behavior accepts directional click and drag triggers", () => {
       dragRight: "clickRight",
     },
   });
+});
+
+test("pet behavior migrates legacy agent actions to desktop-pet actions", () => {
+  assert.deepStrictEqual(normalizePetBehavior({
+    triggers: {
+      singleClick: "focusTerminal",
+      rightClick: "dashboard",
+    },
+  }), {
+    triggers: {
+      singleClick: "sideClick",
+      doubleClick: "annoyedOrSideClick",
+      multiClick: "double",
+      dragStart: "drag",
+      rightClick: "quickMenu",
+    },
+  });
+  assert.deepStrictEqual(validatePetBehavior({
+    triggers: {
+      singleClick: "focusTerminal",
+      rightClick: "dashboard",
+    },
+  }), { status: "ok" });
 });
 
 test("pet behavior still rejects unknown triggers and actions", () => {

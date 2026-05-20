@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self';">
+  <link rel="stylesheet" href="pet-quick-menu.css">
+  <title>CoPets 桌宠互动菜单</title>
+</head>
+<body>
+  <nav class="quick-menu" aria-label="桌宠互动菜单">
+    <button type="button" data-action="sideClick" data-side="random">戳一戳</button>
+    <button type="button" data-action="clickLeft" data-side="left">左戳</button>
+    <button type="button" data-action="clickRight" data-side="right">右戳</button>
+    <button type="button" data-action="annoyedOrSideClick" data-side="random">逗一逗</button>
+    <button type="button" data-action="double">连点反应</button>
+    <button type="button" data-action="drag">拖动动画</button>
+    <button type="button" data-id="sleepToggle" id="sleepToggle">休眠</button>
+    <button type="button" data-id="settings" class="settings">设置</button>
+  </nav>
+  <script src="pet-quick-menu-renderer.js"></script>
+</body>
+</html>

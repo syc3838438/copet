@@ -115,12 +115,16 @@ module.exports = function initMenu(ctx) {
       // Quick-toggle noise controls. Other settings (language, theme, bubble
       // follow, start-with-Claude, updates, etc.) were moved out of the tray
       // and now live only in the Settings panel / About tab.
-      {
+    ];
+    if (!appMode.standalonePet) {
+      items.push({
         label: t("hideBubbles"),
         type: "checkbox",
         checked: ctx.hideBubbles,
         click: (menuItem) => { ctx.hideBubbles = menuItem.checked; },
-      },
+      });
+    }
+    items.push(
       {
         label: t("soundEffects"),
         type: "checkbox",
@@ -138,7 +142,7 @@ module.exports = function initMenu(ctx) {
         checked: ctx.openAtLogin,
         click: (menuItem) => { ctx.openAtLogin = menuItem.checked; },
       },
-    ];
+    );
     // macOS: Dock and Menu Bar visibility toggles
     if (isMac) {
       items.push(
