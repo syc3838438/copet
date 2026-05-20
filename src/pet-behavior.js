@@ -16,9 +16,15 @@ const ACTIONS = new Set([
 
 const TRIGGERS = new Set([
   "singleClick",
+  "singleClickLeft",
+  "singleClickRight",
   "doubleClick",
+  "doubleClickLeft",
+  "doubleClickRight",
   "multiClick",
   "dragStart",
+  "dragLeft",
+  "dragRight",
   "rightClick",
 ]);
 

@@ -3,6 +3,7 @@
 // Render window is pure "view" — receives reaction commands via IPC relay.
 
 const area = document.getElementById("hit-area");
+const gestureRouter = window.CoPetsGestureRouter;
 
 const DEFAULT_BEHAVIOR = {
   triggers: {
@@ -62,8 +63,11 @@ window.hitAPI.onStateSync((data) => {
 let isDragging = false;
 let didDrag = false;
 let mouseDownX, mouseDownY;
+let dragGesture = null;
 let dragMoveRAF = null;
-const DRAG_THRESHOLD = 3;
+const DRAG_THRESHOLD = gestureRouter && gestureRouter.DEFAULT_DRAG_THRESHOLD_PX
+  ? gestureRouter.DEFAULT_DRAG_THRESHOLD_PX
+  : 8;
 
 // --- Reaction state (tracked here to gate input) ---
 let isReacting = false;
@@ -72,6 +76,7 @@ let isDragReacting = false;
 // Cancel signal from main (e.g. state change)
 window.hitAPI.onCancelReaction(() => {
   if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; clickCount = 0; firstClickDir = null; }
+  dragGesture = null;
   isReacting = false;
   isDragReacting = false;
 });
@@ -98,6 +103,7 @@ area.addEventListener("pointerdown", (e) => {
     area.setPointerCapture(e.pointerId);
     isDragging = true;
     didDrag = false;
+    dragGesture = null;
     mouseDownX = e.clientX;
     mouseDownY = e.clientY;
     window.hitAPI.dragLock(true);
@@ -112,7 +118,8 @@ document.addEventListener("pointermove", (e) => {
       const totalDy = e.clientY - mouseDownY;
       if (Math.abs(totalDx) > DRAG_THRESHOLD || Math.abs(totalDy) > DRAG_THRESHOLD) {
         didDrag = true;
-        startDragReaction();
+        dragGesture = createDragGesture(totalDx, totalDy);
+        startDragReaction(dragGesture);
       }
     }
     queueDragMove();
@@ -123,6 +130,7 @@ function stopDrag() {
   if (!isDragging) return;
   clearQueuedDragMove();
   isDragging = false;
+  dragGesture = null;
   window.hitAPI.dragLock(false);
   area.classList.remove("dragging");
   if (didDrag) {
@@ -165,6 +173,49 @@ function _getTriggerAction(triggerName, fallback) {
   return (triggers && triggers[triggerName]) || fallback || "none";
 }
 
+function _resolveGestureAction(gesture, fallback) {
+  if (gestureRouter && typeof gestureRouter.resolveTriggerAction === "function") {
+    return gestureRouter.resolveTriggerAction(_behavior, gesture, fallback).action;
+  }
+  const trigger = gesture && gesture.kind === "drag"
+    ? "dragStart"
+    : (gesture && gesture.kind === "contextMenu" ? "rightClick" : "singleClick");
+  return _getTriggerAction(trigger, fallback);
+}
+
+function createClickGesture(clickCount, side) {
+  return {
+    kind: "click",
+    clickCount,
+    side,
+  };
+}
+
+function createDragGesture(dx, dy) {
+  const drag = gestureRouter && typeof gestureRouter.classifyDrag === "function"
+    ? gestureRouter.classifyDrag(dx, dy)
+    : { dx, dy, direction: null, primaryAxis: Math.abs(dx) >= Math.abs(dy) ? "x" : "y" };
+  return {
+    kind: "drag",
+    drag,
+  };
+}
+
+function getGestureSide(meta) {
+  const gesture = meta && meta.gesture;
+  if (gesture && (gesture.side === "left" || gesture.side === "right")) {
+    return gesture.side;
+  }
+  if (
+    gesture
+    && gesture.drag
+    && (gesture.drag.direction === "left" || gesture.drag.direction === "right")
+  ) {
+    return gesture.drag.direction;
+  }
+  return meta && meta.firstClickDir === "right" ? "right" : "left";
+}
+
 function _pickReactionFile(reaction) {
   if (!reaction) return null;
   const files = Array.isArray(reaction.files) && reaction.files.length
@@ -203,7 +254,7 @@ function performAction(action, meta = {}) {
       }
       return _playReactionByKey("drag", 2500);
     case "sideClick": {
-      const key = meta.firstClickDir === "right" ? "clickRight" : "clickLeft";
+      const key = getGestureSide(meta) === "right" ? "clickRight" : "clickLeft";
       return _playReactionByKey(key, 2500);
     }
     case "annoyedOrSideClick":
@@ -237,7 +288,9 @@ function handleClick(clientX) {
 
   clickCount++;
   if (clickCount === 1) {
-    firstClickDir = clientX < area.offsetWidth / 2 ? "left" : "right";
+    firstClickDir = gestureRouter && typeof gestureRouter.classifyClickSide === "function"
+      ? gestureRouter.classifyClickSide(clientX, area.offsetWidth)
+      : (clientX < area.offsetWidth / 2 ? "left" : "right");
   }
 
   if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
@@ -246,7 +299,8 @@ function handleClick(clientX) {
     clickCount = 0;
     const dir = firstClickDir;
     firstClickDir = null;
-    performAction(_getTriggerAction("multiClick", "double"), { firstClickDir: dir });
+    const gesture = createClickGesture(4, dir);
+    performAction(_resolveGestureAction(gesture, "double"), { firstClickDir: dir, gesture });
   } else {
     clickTimer = setTimeout(() => {
       clickTimer = null;
@@ -254,9 +308,9 @@ function handleClick(clientX) {
       const dir = firstClickDir;
       clickCount = 0;
       firstClickDir = null;
-      const trigger = count >= 2 ? "doubleClick" : "singleClick";
       const fallback = count >= 2 ? "annoyedOrSideClick" : "focusTerminal";
-      performAction(_getTriggerAction(trigger, fallback), { firstClickDir: dir });
+      const gesture = createClickGesture(count >= 2 ? 2 : 1, dir);
+      performAction(_resolveGestureAction(gesture, fallback), { firstClickDir: dir, gesture });
     }, CLICK_WINDOW_MS);
   }
 }
@@ -270,7 +324,7 @@ function playReaction(svg, duration) {
 }
 
 // --- Drag reaction ---
-function startDragReaction() {
+function startDragReaction(gesture) {
   if (isDragReacting) return;
   if (dndEnabled) return;
 
@@ -278,7 +332,11 @@ function startDragReaction() {
     isReacting = false;
   }
 
-  performAction(_getTriggerAction("dragStart", "drag"), { fromDragStart: true });
+  const dragStartGesture = gesture || dragGesture || createDragGesture(0, 0);
+  performAction(_resolveGestureAction(dragStartGesture, "drag"), {
+    fromDragStart: true,
+    gesture: dragStartGesture,
+  });
 }
 
 function endDragReaction() {
@@ -290,5 +348,7 @@ function endDragReaction() {
 // --- Right-click context menu ---
 document.addEventListener("contextmenu", (e) => {
   e.preventDefault();
-  performAction(_getTriggerAction("rightClick", "contextMenu"));
+  performAction(_resolveGestureAction({ kind: "contextMenu" }, "contextMenu"), {
+    gesture: { kind: "contextMenu" },
+  });
 });

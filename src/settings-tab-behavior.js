@@ -1,6 +1,8 @@
 "use strict";
 
 (function initSettingsTabBehavior(root) {
+  const INHERIT_VALUE = "__inherit__";
+
   const DEFAULT_BEHAVIOR = {
     triggers: {
       singleClick: "focusTerminal",
@@ -11,12 +13,33 @@
     },
   };
 
-  const TRIGGER_ROWS = [
-    { key: "singleClick", label: "单击默认动作", desc: "singleClick" },
-    { key: "doubleClick", label: "双击默认动作", desc: "doubleClick" },
-    { key: "multiClick", label: "连续点击动作", desc: "multiClick" },
-    { key: "dragStart", label: "拖动默认动作", desc: "dragStart" },
-    { key: "rightClick", label: "右键动作", desc: "rightClick" },
+  const TRIGGER_SECTIONS = [
+    {
+      title: "点击",
+      rows: [
+        { key: "singleClick", label: "单击默认动作", desc: "所有单击未细分时使用" },
+        { key: "singleClickLeft", label: "左侧单击动作", desc: "未设置时沿用单击默认动作", inheritFrom: "singleClick" },
+        { key: "singleClickRight", label: "右侧单击动作", desc: "未设置时沿用单击默认动作", inheritFrom: "singleClick" },
+        { key: "doubleClick", label: "双击默认动作", desc: "所有双击未细分时使用" },
+        { key: "doubleClickLeft", label: "左侧双击动作", desc: "未设置时沿用双击默认动作", inheritFrom: "doubleClick" },
+        { key: "doubleClickRight", label: "右侧双击动作", desc: "未设置时沿用双击默认动作", inheritFrom: "doubleClick" },
+        { key: "multiClick", label: "连续点击动作", desc: "快速连续点击四次及以上" },
+      ],
+    },
+    {
+      title: "拖动",
+      rows: [
+        { key: "dragStart", label: "拖动默认动作", desc: "未细分方向时使用" },
+        { key: "dragLeft", label: "向左拖动动作", desc: "未设置时沿用拖动默认动作", inheritFrom: "dragStart" },
+        { key: "dragRight", label: "向右拖动动作", desc: "未设置时沿用拖动默认动作", inheritFrom: "dragStart" },
+      ],
+    },
+    {
+      title: "鼠标",
+      rows: [
+        { key: "rightClick", label: "右键动作", desc: "鼠标右键或上下文菜单" },
+      ],
+    },
   ];
 
   const ACTION_OPTIONS = [
@@ -37,21 +60,46 @@
   let helpers = null;
   let ops = null;
 
-  function readBehavior() {
+  function readRawTriggers() {
     const current = state && state.snapshot && state.snapshot.petBehavior;
     const triggers = current && current.triggers && typeof current.triggers === "object"
       ? current.triggers
       : current;
+    return triggers && typeof triggers === "object" && !Array.isArray(triggers)
+      ? triggers
+      : {};
+  }
+
+  function readBehavior() {
     return {
       triggers: {
         ...DEFAULT_BEHAVIOR.triggers,
-        ...(triggers && typeof triggers === "object" && !Array.isArray(triggers) ? triggers : {}),
+        ...readRawTriggers(),
       },
     };
   }
 
+  function hasExplicitTrigger(key) {
+    return Object.prototype.hasOwnProperty.call(readRawTriggers(), key);
+  }
+
   function showToast(message) {
     if (ops && typeof ops.showToast === "function") ops.showToast(message);
+  }
+
+  function addActionOptions(select, spec) {
+    if (spec.inheritFrom) {
+      const inherit = document.createElement("option");
+      inherit.value = INHERIT_VALUE;
+      inherit.textContent = "沿用默认动作";
+      select.appendChild(inherit);
+    }
+    for (const option of ACTION_OPTIONS) {
+      const el = document.createElement("option");
+      el.value = option.value;
+      el.textContent = option.label;
+      select.appendChild(el);
+    }
   }
 
   function buildRow(spec) {
@@ -74,16 +122,17 @@
     control.className = "row-control behavior-row-control";
     const select = document.createElement("select");
     select.className = "behavior-select";
-    for (const option of ACTION_OPTIONS) {
-      const el = document.createElement("option");
-      el.value = option.value;
-      el.textContent = option.label;
-      select.appendChild(el);
-    }
-    select.value = behavior.triggers[spec.key] || DEFAULT_BEHAVIOR.triggers[spec.key] || "none";
+    addActionOptions(select, spec);
+    select.value = spec.inheritFrom && !hasExplicitTrigger(spec.key)
+      ? INHERIT_VALUE
+      : (behavior.triggers[spec.key] || DEFAULT_BEHAVIOR.triggers[spec.key] || "none");
     select.addEventListener("change", () => {
       const next = readBehavior();
-      next.triggers[spec.key] = select.value;
+      if (select.value === INHERIT_VALUE) {
+        delete next.triggers[spec.key];
+      } else {
+        next.triggers[spec.key] = select.value;
+      }
       select.disabled = true;
       window.settingsAPI.update("petBehavior", next)
         .then((result) => {
@@ -117,7 +166,9 @@
     subtitle.textContent = "设置点击、拖动、右键等操作触发的桌宠动作。";
     parent.appendChild(subtitle);
 
-    parent.appendChild(helpers.buildSection("", TRIGGER_ROWS.map(buildRow)));
+    for (const section of TRIGGER_SECTIONS) {
+      parent.appendChild(helpers.buildSection(section.title, section.rows.map(buildRow)));
+    }
 
     const resetWrap = document.createElement("div");
     resetWrap.className = "anim-map-reset";

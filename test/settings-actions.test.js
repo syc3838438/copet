@@ -201,6 +201,25 @@ describe("updateRegistry pure-data validators", () => {
     assert.strictEqual(updateRegistry.themeOverrides("nope", deps).status, "error");
   });
 
+  it("petBehavior accepts directional triggers through the settings update registry", () => {
+    const deps = { snapshot: baseSnapshot };
+    assert.strictEqual(updateRegistry.petBehavior({
+      triggers: {
+        singleClickLeft: "clickLeft",
+        singleClickRight: "clickRight",
+        doubleClickLeft: "clickLeft",
+        doubleClickRight: "clickRight",
+        dragLeft: "clickLeft",
+        dragRight: "clickRight",
+      },
+    }, deps).status, "ok");
+    assert.strictEqual(updateRegistry.petBehavior({
+      triggers: {
+        dragUp: "drag",
+      },
+    }, deps).status, "error");
+  });
+
   it("tgApproval validates the settings object while allowing incomplete saved config", () => {
     const deps = { snapshot: baseSnapshot };
     assert.strictEqual(updateRegistry.tgApproval({

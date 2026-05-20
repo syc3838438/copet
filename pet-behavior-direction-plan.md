@@ -11,6 +11,17 @@
 - 向左拖动、向右拖动触发不同动作。
 - 旧版配置继续可用，不丢用户已有 `petBehavior`。
 
+## 执行进展
+
+2026-05-20 已完成第一轮实现：
+
+- 新增 `src/pet-gesture-router.js`，集中处理点击侧、拖动方向和方向触发回退。
+- `petBehavior` 已支持 `singleClickLeft`、`singleClickRight`、`doubleClickLeft`、`doubleClickRight`、`dragLeft`、`dragRight`。
+- `hit-renderer.js` 已接入方向路由，左/右点击和左/右拖动可以触发不同动作。
+- `dragStart -> sideClick` 已修正，不再无论左右拖动都走左戳。
+- 行为设置页已汉化并加入方向项，方向项默认“沿用默认动作”。
+- 已新增并通过相关测试：`pet-gesture-router`、`pet-behavior`、`hit-renderer-gestures`、`settings-tab-behavior`。
+
 ## 本轮测试结论
 
 ### 已运行测试
