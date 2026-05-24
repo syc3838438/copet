@@ -59,7 +59,6 @@ FakeWindow.fromWebContents = () => ({
 function createHarness(overrides = {}) {
   FakeWindow.instances = [];
   const calls = [];
-  let sleeping = !!overrides.sleeping;
   const ipcMain = new FakeIpcMain();
   const runtime = createPetQuickMenuRuntime({
     BrowserWindow: FakeWindow,
@@ -71,40 +70,49 @@ function createHarness(overrides = {}) {
     },
     guardAlwaysOnTop: (win) => calls.push(["guardAlwaysOnTop", win instanceof FakeWindow]),
     keepOutOfTaskbar: (win) => calls.push(["keepOutOfTaskbar", win instanceof FakeWindow]),
-    sendToHitWin: (...args) => calls.push(["sendToHitWin", ...args]),
     openSettingsWindow: () => calls.push(["openSettingsWindow"]),
-    getDoNotDisturb: () => sleeping,
-    enableDoNotDisturb: () => {
-      sleeping = true;
-      calls.push(["enableDoNotDisturb"]);
-    },
-    disableDoNotDisturb: () => {
-      sleeping = false;
-      calls.push(["disableDoNotDisturb"]);
-    },
+    getAnchorBounds: overrides.anchorBounds ? () => overrides.anchorBounds : undefined,
+    getState: () => overrides.state || { durations: { work: 25, play: 15, rest: 5 }, activeScene: "" },
+    onSelectScene: (scene) => calls.push(["onSelectScene", scene]),
+    onCycleDuration: (scene) => calls.push(["onCycleDuration", scene]),
+    onStopScene: () => calls.push(["onStopScene"]),
   });
   return { calls, ipcMain, runtime };
 }
 
-test("quick menu positions near the pet and clamps inside the work area", () => {
+test("quick menu positions below the pet and clamps inside the work area", () => {
   const { runtime } = createHarness({ workArea: { x: 0, y: 0, width: 300, height: 200 } });
 
-  assert.deepStrictEqual(runtime.__test.computeBounds({ x: 10, y: 190 }), {
+  assert.deepStrictEqual(runtime.__test.computeBounds({ x: 10, y: 40, width: 80, height: 60 }), {
     x: 0,
-    y: 130,
-    width: 492,
+    y: 108,
+    width: 392,
     height: 52,
   });
 });
 
-test("quick menu show sends current sleep state and toggles when already visible", () => {
-  const { calls, runtime } = createHarness({ sleeping: true });
+test("quick menu flips above the pet when there is no room below", () => {
+  const { runtime } = createHarness({ workArea: { x: 0, y: 0, width: 500, height: 200 } });
+
+  assert.deepStrictEqual(runtime.__test.computeBounds({ x: 120, y: 130, width: 80, height: 60 }), {
+    x: 0,
+    y: 70,
+    width: 392,
+    height: 52,
+  });
+});
+
+test("quick menu show toggles when already visible", () => {
+  const { calls, runtime } = createHarness();
 
   runtime.show({ sender: "hit-web-contents" }, { clientX: 10, clientY: 12 });
   const win = FakeWindow.instances[0];
 
   assert.strictEqual(win.visible, true);
-  assert.deepStrictEqual(win.webContents.sent, [["pet-quick-menu-state", { sleeping: true }]]);
+  assert.deepStrictEqual(win.webContents.sent, [[
+    "pet-quick-menu-state",
+    { durations: { work: 25, play: 15, rest: 5 }, activeScene: "" },
+  ]]);
   assert.deepStrictEqual(calls, [
     ["guardAlwaysOnTop", true],
     ["keepOutOfTaskbar", true],
@@ -114,30 +122,51 @@ test("quick menu show sends current sleep state and toggles when already visible
   assert.strictEqual(win.visible, false);
 });
 
-test("quick menu action buttons send immediate pet actions", () => {
+test("quick menu scene buttons select persistent pet scenes", () => {
   const { calls, ipcMain, runtime } = createHarness();
   runtime.show({ sender: "hit-web-contents" }, { clientX: 10, clientY: 12 });
 
   ipcMain.send("pet-quick-menu-action", {
-    id: "clickLeft",
-    action: "clickLeft",
-    side: "left",
+    id: "scene",
+    scene: "work",
   });
 
   assert.deepStrictEqual(calls.slice(-1), [
-    ["sendToHitWin", "pet-quick-action", { action: "clickLeft", side: "left" }],
+    ["onSelectScene", "work"],
   ]);
   assert.strictEqual(FakeWindow.instances[0].visible, false);
 });
 
-test("quick menu sleep and settings buttons stay local to the menu runtime", () => {
+test("quick menu duration buttons cycle time without closing the menu", () => {
   const { calls, ipcMain, runtime } = createHarness();
   runtime.show({ sender: "hit-web-contents" }, { clientX: 10, clientY: 12 });
 
-  ipcMain.send("pet-quick-menu-action", { id: "sleepToggle" });
-  ipcMain.send("pet-quick-menu-action", { id: "settings" });
+  ipcMain.send("pet-quick-menu-action", {
+    id: "duration",
+    scene: "play",
+  });
 
-  assert.ok(calls.some((call) => call[0] === "enableDoNotDisturb"));
-  assert.ok(calls.some((call) => call[0] === "openSettingsWindow"));
+  assert.ok(calls.some((call) => call[0] === "onCycleDuration" && call[1] === "play"));
+  assert.strictEqual(FakeWindow.instances[0].visible, true);
 });
 
+test("quick menu stop button stops active scene and closes the menu", () => {
+  const { calls, ipcMain, runtime } = createHarness({
+    state: { durations: { work: 25, play: 15, rest: 5 }, activeScene: "work" },
+  });
+  runtime.show({ sender: "hit-web-contents" }, { clientX: 10, clientY: 12 });
+
+  ipcMain.send("pet-quick-menu-action", { id: "stop" });
+
+  assert.deepStrictEqual(calls.slice(-1), [["onStopScene"]]);
+  assert.strictEqual(FakeWindow.instances[0].visible, false);
+});
+
+test("quick menu settings button stays local to the menu runtime", () => {
+  const { calls, ipcMain, runtime } = createHarness();
+  runtime.show({ sender: "hit-web-contents" }, { clientX: 10, clientY: 12 });
+
+  ipcMain.send("pet-quick-menu-action", { id: "settings" });
+
+  assert.ok(calls.some((call) => call[0] === "openSettingsWindow"));
+});

@@ -117,6 +117,21 @@ describe("tick sleepSequence mode", () => {
     assert.deepStrictEqual(statesSeen, ["sleeping"]);
   });
 
+  it("suppresses idle sleep automation for standalone scene visuals", () => {
+    const theme = cloneTheme(_defaultTheme);
+    theme.sleepSequence = { mode: "direct" };
+    theme.timings.mouseIdleTimeout = 1000;
+    theme.timings.mouseSleepTimeout = 60;
+
+    ctx = makeCtx(theme, statesSeen);
+    ctx.suppressIdleAutomation = true;
+    tickApi = loader.initTick(ctx);
+    tickApi.startMainTick();
+
+    for (const step of [50, 50, 50, 50]) mock.timers.tick(step);
+    assert.deepStrictEqual(statesSeen, []);
+  });
+
   it("full mode keeps the yawning entry path", () => {
     const theme = cloneTheme(_defaultTheme);
     theme.sleepSequence = { mode: "full" };

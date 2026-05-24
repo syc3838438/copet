@@ -62,6 +62,11 @@ function createHarness(behavior, options = {}) {
     standalonePet: !!options.standalonePet,
     reactions: {
       drag: { file: "drag.svg" },
+      hover: { file: "hover.svg" },
+      click: { file: "click.svg" },
+      dragLeft: { file: "drag-left.svg" },
+      dragRight: { file: "drag-right.svg" },
+      liftUp: { file: "lift-up.svg" },
       clickLeft: { file: "left.svg", durationMs: 25 },
       clickRight: { file: "right.svg", durationMs: 25 },
       double: { file: "double.svg", durationMs: 25 },
@@ -107,7 +112,11 @@ function createHarness(behavior, options = {}) {
   vm.createContext(context);
   vm.runInContext(HIT_RENDERER_SOURCE, context, { filename: "src/hit-renderer.js" });
   assert.strictEqual(typeof stateSyncCb, "function");
-  stateSyncCb({ currentState: options.currentState || "idle", miniMode: false, dndEnabled: false });
+  stateSyncCb({
+    currentState: options.currentState || "idle",
+    miniMode: false,
+    dndEnabled: !!options.dndEnabled,
+  });
 
   return {
     area,
@@ -220,7 +229,7 @@ test("hit renderer keeps standalone non-idle clicks as pet interactions", () => 
 
   pointerClick(harness, 20);
 
-  assert.deepStrictEqual(reactionLogs(harness), [["playClickReaction", "left.svg", 25]]);
+  assert.deepStrictEqual(reactionLogs(harness), [["playClickReaction", "click.svg", 840]]);
   assert.ok(!harness.logs.some((entry) => entry[0] === "focusTerminal"));
 });
 
@@ -238,9 +247,31 @@ test("hit renderer sends right-clicks to the standalone quick menu", () => {
 test("hit renderer quick-menu actions immediately play reactions", () => {
   const harness = createHarness({ triggers: { singleClick: "sideClick" } }, { standalonePet: true });
 
-  harness.quickAction({ action: "clickRight", side: "right" });
+  harness.quickAction({ action: "dragRight", side: "right" });
 
-  assert.deepStrictEqual(reactionLogs(harness), [["playClickReaction", "right.svg", 25]]);
+  assert.deepStrictEqual(reactionLogs(harness), [["playClickReaction", "drag-right.svg", 1200]]);
+});
+
+test("hit renderer plays fixed standalone hover reactions when the pointer enters the pet", () => {
+  const harness = createHarness({ triggers: { hover: "sideClick" } }, { standalonePet: true });
+
+  harness.area.dispatch("pointerenter", { clientX: 80, clientY: 20 });
+  harness.flushTimers();
+  harness.area.dispatch("pointerenter", { clientX: 20, clientY: 20 });
+
+  assert.deepStrictEqual(reactionLogs(harness), [["playClickReaction", "hover.svg", 3000]]);
+});
+
+test("hit renderer suppresses hover reactions while sleeping", () => {
+  const harness = createHarness(
+    { triggers: { hover: "sideClick" } },
+    { standalonePet: true, dndEnabled: true }
+  );
+
+  harness.area.dispatch("pointerenter", { clientX: 80, clientY: 20 });
+  harness.flushTimers();
+
+  assert.deepStrictEqual(reactionLogs(harness), []);
 });
 
 test("hit renderer reapplies drag reactions when horizontal direction reverses", () => {
@@ -260,5 +291,36 @@ test("hit renderer reapplies drag reactions when horizontal direction reverses",
   assert.deepStrictEqual(reactionLogs(harness), [
     ["playClickReaction", "left.svg", 25],
     ["playClickReaction", "right.svg", 25],
+  ]);
+});
+
+test("standalone drag switches left to right without waiting for the old reaction", () => {
+  const harness = createHarness({}, { standalonePet: true });
+
+  harness.area.dispatch("pointerdown", { button: 0, clientX: 80, clientY: 30 });
+  harness.document.dispatch("pointermove", { button: 0, clientX: 40, clientY: 30 });
+  harness.document.dispatch("pointermove", { button: 0, clientX: 50, clientY: 30 });
+  harness.document.dispatch("pointermove", { button: 0, clientX: 62, clientY: 30 });
+  harness.document.dispatch("pointerup", { button: 0, clientX: 62, clientY: 30 });
+
+  assert.deepStrictEqual(reactionLogs(harness), [
+    ["playClickReaction", "drag-left.svg", 1200],
+    ["playClickReaction", "drag-right.svg", 1200],
+    ["playClickReaction", "drag-right.svg", 1200],
+  ]);
+});
+
+test("standalone drag switches from horizontal dragging to lift-up", () => {
+  const harness = createHarness({}, { standalonePet: true });
+
+  harness.area.dispatch("pointerdown", { button: 0, clientX: 80, clientY: 60 });
+  harness.document.dispatch("pointermove", { button: 0, clientX: 40, clientY: 60 });
+  harness.document.dispatch("pointermove", { button: 0, clientX: 40, clientY: 48 });
+  harness.document.dispatch("pointerup", { button: 0, clientX: 40, clientY: 48 });
+
+  assert.deepStrictEqual(reactionLogs(harness), [
+    ["playClickReaction", "drag-left.svg", 1200],
+    ["playClickReaction", "lift-up.svg", 900],
+    ["playClickReaction", "lift-up.svg", 900],
   ]);
 });

@@ -6,7 +6,7 @@ const os = require("os");
 const path = require("path");
 const zlib = require("zlib");
 
-const ADAPTER_VERSION = 2;
+const ADAPTER_VERSION = 4;
 const MARKER_FILENAME = ".clawd-codex-pet.json";
 const THEME_ID_PREFIX = "codex-pet-";
 const PNG_ALPHA_VALIDATION_SCHEMA_VERSION = 1;
@@ -367,6 +367,11 @@ function buildThemeJson(packageInfo, themeId) {
       wide: { x: 0, y: 0, w: ATLAS.frameWidth, h: ATLAS.frameHeight },
     },
     reactions: {
+      hover: { file: "codex-pet-waving-once.svg", duration: 3000 },
+      click: { file: "codex-pet-jumping-once.svg", duration: 840 },
+      dragLeft: { file: "codex-pet-running-left-loop.svg", duration: 1200 },
+      dragRight: { file: "codex-pet-running-right-loop.svg", duration: 1200 },
+      liftUp: { file: "codex-pet-jumping-once.svg", duration: 900 },
       drag: { file: "codex-pet-running-loop.svg" },
       clickLeft: { file: "codex-pet-jumping-once.svg", duration: 840 },
       clickRight: { file: "codex-pet-jumping-once.svg", duration: 840 },

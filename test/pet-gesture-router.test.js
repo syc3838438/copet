@@ -40,6 +40,7 @@ test("classifyDrag preserves delta and primary axis while reserving vertical sup
     direction: null,
     primaryAxis: "y",
   });
+  assert.strictEqual(classifyDragDirection(0, -12, { includeVertical: true }), "up");
 });
 
 test("resolves directional click triggers before generic click triggers", () => {
@@ -93,6 +94,7 @@ test("resolves directional drag triggers before generic dragStart", () => {
       dragStart: "drag",
       dragLeft: "clickLeft",
       dragRight: "clickRight",
+      dragUp: "liftUp",
     },
   };
 
@@ -116,6 +118,43 @@ test("resolves directional drag triggers before generic dragStart", () => {
       drag: classifyDrag(2, 20),
     }).action,
     "drag"
+  );
+  assert.strictEqual(
+    resolveTriggerAction(behavior, {
+      kind: "drag",
+      drag: classifyDrag(0, -20, { includeVertical: true }),
+    }).action,
+    "liftUp"
+  );
+});
+
+test("resolves hover trigger as a desktop-pet interaction", () => {
+  const behavior = {
+    triggers: {
+      hover: "sideClick",
+    },
+  };
+
+  assert.deepStrictEqual(
+    resolveTriggerAction(behavior, { kind: "hover", side: "right" }),
+    {
+      action: "sideClick",
+      trigger: "hover",
+      baseTrigger: "hover",
+      direction: "right",
+      inherited: false,
+    }
+  );
+
+  assert.deepStrictEqual(
+    resolveTriggerAction({}, { kind: "hover", side: "left" }),
+    {
+      action: "annoyedOrSideClick",
+      trigger: "hover",
+      baseTrigger: "hover",
+      direction: "left",
+      inherited: false,
+    }
   );
 });
 

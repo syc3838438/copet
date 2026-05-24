@@ -17,7 +17,7 @@ const SIDEBAR_TABS = [
   { id: "remote-ssh", icon: "\u{1F50C}", labelKey: "sidebarRemoteSsh", feature: "remoteSsh", available: true },
   { id: "about", icon: "\u2139", labelKey: "sidebarAbout", feature: null, available: true },
 ];
-const STANDALONE_TAB_IDS = new Set(["general", "theme", "behavior", "animMap", "animOverrides", "shortcuts", "about"]);
+const STANDALONE_TAB_IDS = new Set(["general", "theme"]);
 
 function isFeatureEnabled(featureName) {
   if (!featureName) return true;
@@ -101,12 +101,14 @@ core.ops.installRenderHooks({
 globalThis.ClawdSettingsTabGeneral.init(core);
 globalThis.ClawdSettingsTabAgents.init(core);
 globalThis.ClawdSettingsTabTheme.init(core);
-if (globalThis.ClawdSettingsTabBehavior) {
+if (!APP_MODE.standalonePet && globalThis.ClawdSettingsTabBehavior) {
   globalThis.ClawdSettingsTabBehavior.init(core);
 }
-globalThis.ClawdSettingsTabAnimMap.init(core);
-globalThis.ClawdSettingsTabAnimOverrides.init(core);
-globalThis.ClawdSettingsTabShortcuts.init(core);
+if (!APP_MODE.standalonePet) {
+  globalThis.ClawdSettingsTabAnimMap.init(core);
+  globalThis.ClawdSettingsTabAnimOverrides.init(core);
+  globalThis.ClawdSettingsTabShortcuts.init(core);
+}
 if (isFeatureEnabled("telegramApproval") && globalThis.ClawdSettingsTabTelegramApproval) {
   globalThis.ClawdSettingsTabTelegramApproval.init(core);
 }

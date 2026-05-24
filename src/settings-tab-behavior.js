@@ -5,6 +5,7 @@
 
   const DEFAULT_BEHAVIOR = {
     triggers: {
+      hover: "annoyedOrSideClick",
       singleClick: "sideClick",
       doubleClick: "annoyedOrSideClick",
       multiClick: "double",
@@ -37,6 +38,7 @@
     {
       title: "鼠标",
       rows: [
+        { key: "hover", label: "鼠标悬浮动作", desc: "鼠标移入桌宠时触发，带冷却时间避免重复播放" },
         { key: "rightClick", label: "右键动作", desc: "鼠标右键或上下文菜单" },
       ],
     },

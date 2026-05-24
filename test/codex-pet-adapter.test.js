@@ -377,6 +377,12 @@ describe("codex-pet-adapter wrapper generation and materialization", () => {
     assert.strictEqual(themeJson.states.error[0], "codex-pet-failed-loop.svg");
     assert.deepStrictEqual(themeJson.hitBoxes.default, { x: 0, y: 0, w: 192, h: 208 });
     assert.strictEqual(themeJson.reactions.drag.file, "codex-pet-running-loop.svg");
+    assert.strictEqual(themeJson.reactions.hover.file, "codex-pet-waving-once.svg");
+    assert.strictEqual(themeJson.reactions.hover.duration, 3000);
+    assert.strictEqual(themeJson.reactions.click.file, "codex-pet-jumping-once.svg");
+    assert.strictEqual(themeJson.reactions.dragLeft.file, "codex-pet-running-left-loop.svg");
+    assert.strictEqual(themeJson.reactions.dragRight.file, "codex-pet-running-right-loop.svg");
+    assert.strictEqual(themeJson.reactions.liftUp.file, "codex-pet-jumping-once.svg");
     assert.strictEqual(Object.prototype.hasOwnProperty.call(themeJson, "objectScale"), false);
 
     const marker = readJson(path.join(materialized.themeDir, adapter.MARKER_FILENAME));

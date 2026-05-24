@@ -2,7 +2,7 @@
 
 const defaultPath = require("path");
 
-const MENU_WIDTH = 492;
+const MENU_WIDTH = 392;
 const MENU_HEIGHT = 52;
 const MENU_GAP = 8;
 
@@ -26,11 +26,12 @@ function createPetQuickMenuRuntime(options = {}) {
   const htmlPath = options.htmlPath || path.join(__dirname, "pet-quick-menu.html");
   const guardAlwaysOnTop = options.guardAlwaysOnTop || noop;
   const keepOutOfTaskbar = options.keepOutOfTaskbar || noop;
-  const sendToHitWin = options.sendToHitWin || noop;
   const openSettingsWindow = options.openSettingsWindow || noop;
-  const enableDoNotDisturb = options.enableDoNotDisturb || noop;
-  const disableDoNotDisturb = options.disableDoNotDisturb || noop;
-  const getDoNotDisturb = options.getDoNotDisturb || (() => false);
+  const getAnchorBounds = options.getAnchorBounds || null;
+  const onSelectScene = options.onSelectScene || noop;
+  const onCycleDuration = options.onCycleDuration || noop;
+  const onStopScene = options.onStopScene || noop;
+  const getState = options.getState || (() => ({}));
 
   let menuWin = null;
   const disposers = [];
@@ -59,6 +60,9 @@ function createPetQuickMenuRuntime(options = {}) {
     });
     menuWin.setMenuBarVisibility(false);
     menuWin.loadFile(htmlPath);
+    if (menuWin.webContents && typeof menuWin.webContents.on === "function") {
+      menuWin.webContents.on("did-finish-load", () => sendState());
+    }
     menuWin.on("blur", () => {
       setTimeout(() => hide(), 80);
     });
@@ -69,26 +73,51 @@ function createPetQuickMenuRuntime(options = {}) {
     return menuWin;
   }
 
-  function getSenderPoint(event, payload) {
+  function normalizeBounds(bounds) {
+    if (!bounds || typeof bounds !== "object") return null;
+    const x = Number(bounds.x);
+    const y = Number(bounds.y);
+    const width = Number(bounds.width);
+    const height = Number(bounds.height);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(width) || !Number.isFinite(height)) {
+      return null;
+    }
+    return {
+      x,
+      y,
+      width: Math.max(1, width),
+      height: Math.max(1, height),
+    };
+  }
+
+  function getSenderBounds(event, payload) {
+    const provided = normalizeBounds(payload && payload.anchorBounds);
+    if (provided) return provided;
+    if (typeof getAnchorBounds === "function") {
+      const bounds = normalizeBounds(getAnchorBounds());
+      if (bounds) return bounds;
+    }
     const senderWin = event && event.sender && typeof BrowserWindow.fromWebContents === "function"
       ? BrowserWindow.fromWebContents(event.sender)
       : null;
     const bounds = senderWin && typeof senderWin.getBounds === "function"
       ? senderWin.getBounds()
       : null;
-    const fallback = bounds
-      ? { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 }
-      : { x: 0, y: 0 };
+    const senderBounds = normalizeBounds(bounds);
+    if (senderBounds) return senderBounds;
     const clientX = Number(payload && payload.clientX);
     const clientY = Number(payload && payload.clientY);
-    if (!bounds || !Number.isFinite(clientX) || !Number.isFinite(clientY)) return fallback;
-    return {
-      x: bounds.x + clientX,
-      y: bounds.y + clientY,
-    };
+    if (Number.isFinite(clientX) && Number.isFinite(clientY)) {
+      return { x: clientX, y: clientY, width: 1, height: 1 };
+    }
+    return { x: 0, y: 0, width: 1, height: 1 };
   }
 
-  function getWorkArea(point) {
+  function getWorkArea(anchor) {
+    const point = {
+      x: anchor.x + anchor.width / 2,
+      y: anchor.y + anchor.height / 2,
+    };
     try {
       if (screen && typeof screen.getDisplayNearestPoint === "function") {
         const display = screen.getDisplayNearestPoint({ x: Math.round(point.x), y: Math.round(point.y) });
@@ -104,20 +133,57 @@ function createPetQuickMenuRuntime(options = {}) {
     return { x: 0, y: 0, width: 1280, height: 800 };
   }
 
-  function computeBounds(point) {
-    const workArea = getWorkArea(point);
-    const below = point.y + MENU_GAP + MENU_HEIGHT <= workArea.y + workArea.height;
-    const y = below ? point.y + MENU_GAP : point.y - MENU_GAP - MENU_HEIGHT;
-    return {
-      x: Math.round(clamp(point.x - MENU_WIDTH / 2, workArea.x, workArea.x + workArea.width - MENU_WIDTH)),
-      y: Math.round(clamp(y, workArea.y, workArea.y + workArea.height - MENU_HEIGHT)),
+  function intersects(a, b) {
+    return a.x < b.x + b.width
+      && a.x + a.width > b.x
+      && a.y < b.y + b.height
+      && a.y + a.height > b.y;
+  }
+
+  function computeBounds(anchor) {
+    const workArea = getWorkArea(anchor);
+    const minY = workArea.y;
+    const maxY = workArea.y + workArea.height - MENU_HEIGHT;
+    const belowY = anchor.y + anchor.height + MENU_GAP;
+    const aboveY = anchor.y - MENU_GAP - MENU_HEIGHT;
+    const belowFits = belowY <= maxY;
+    const aboveFits = aboveY >= minY;
+    let y;
+
+    if (belowFits) {
+      y = belowY;
+    } else if (aboveFits) {
+      y = aboveY;
+    } else {
+      const belowSpace = workArea.y + workArea.height - (anchor.y + anchor.height);
+      const aboveSpace = anchor.y - workArea.y;
+      y = belowSpace >= aboveSpace ? maxY : minY;
+    }
+
+    let bounds = {
+      x: Math.round(clamp(anchor.x + anchor.width / 2 - MENU_WIDTH / 2, workArea.x, workArea.x + workArea.width - MENU_WIDTH)),
+      y: Math.round(clamp(y, minY, maxY)),
       width: MENU_WIDTH,
       height: MENU_HEIGHT,
+    };
+    if (intersects(bounds, anchor)) {
+      if (aboveFits) bounds = { ...bounds, y: Math.round(aboveY) };
+      else if (belowFits) bounds = { ...bounds, y: Math.round(belowY) };
+    }
+    return {
+      ...bounds,
+      y: Math.round(clamp(bounds.y, minY, maxY)),
     };
   }
 
   function hide() {
     if (isLiveWindow(menuWin) && typeof menuWin.hide === "function") menuWin.hide();
+  }
+
+  function sendState() {
+    if (isLiveWindow(menuWin) && menuWin.webContents && typeof menuWin.webContents.send === "function") {
+      menuWin.webContents.send("pet-quick-menu-state", getState() || {});
+    }
   }
 
   function show(event, payload = {}) {
@@ -127,10 +193,8 @@ function createPetQuickMenuRuntime(options = {}) {
       hide();
       return;
     }
-    win.setBounds(computeBounds(getSenderPoint(event, payload)));
-    if (win.webContents && typeof win.webContents.send === "function") {
-      win.webContents.send("pet-quick-menu-state", { sleeping: !!getDoNotDisturb() });
-    }
+    win.setBounds(computeBounds(getSenderBounds(event, payload)));
+    sendState();
     win.show();
     if (typeof win.focus === "function") win.focus();
     keepOutOfTaskbar(win);
@@ -143,18 +207,19 @@ function createPetQuickMenuRuntime(options = {}) {
       openSettingsWindow();
       return;
     }
-    if (id === "sleepToggle") {
+    if (id === "stop") {
       hide();
-      if (getDoNotDisturb()) disableDoNotDisturb();
-      else enableDoNotDisturb();
+      onStopScene();
       return;
     }
-    if (typeof payload.action === "string" && payload.action) {
+    if (id === "scene" && typeof payload.scene === "string" && payload.scene) {
       hide();
-      sendToHitWin("pet-quick-action", {
-        action: payload.action,
-        side: payload.side || null,
-      });
+      onSelectScene(payload.scene);
+      return;
+    }
+    if (id === "duration" && typeof payload.scene === "string" && payload.scene) {
+      onCycleDuration(payload.scene);
+      sendState();
     }
   }
 
@@ -174,6 +239,7 @@ function createPetQuickMenuRuntime(options = {}) {
     hide,
     cleanup,
     getWindow: () => menuWin,
+    sendState,
     __test: {
       computeBounds,
     },

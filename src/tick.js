@@ -158,6 +158,7 @@ function runMainTickOnce() {
     // ── Idle state edge detection (must run every tick for timer cleanup) ──
     const idleNow = ctx.currentState === "idle" && !ctx.idlePaused;
     const miniIdleNow = ctx.currentState === "mini-idle" && !ctx.idlePaused && !ctx.miniTransitioning;
+    const suppressIdleAutomation = !!ctx.suppressIdleAutomation;
     const nextDelay = () => getNextTickDelay(idleNow, miniIdleNow);
 
     if (idleNow && !idleWasActive) {
@@ -237,7 +238,7 @@ function runMainTickOnce() {
 
     // ── Below: idle or mini-idle logic ──
     // Normal idle: mouse idle detection + sleep sequence
-    if (idleNow) {
+    if (idleNow && !suppressIdleAutomation) {
       if (moved) {
         mouseStillSince = Date.now();
         hasTriggeredYawn = false;

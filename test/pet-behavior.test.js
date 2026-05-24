@@ -12,6 +12,7 @@ const {
 test("default pet behavior uses visible standalone desktop-pet actions", () => {
   assert.deepStrictEqual(cloneDefaultBehavior(), {
     triggers: {
+      hover: "annoyedOrSideClick",
       singleClick: "sideClick",
       doubleClick: "annoyedOrSideClick",
       multiClick: "double",
@@ -24,18 +25,21 @@ test("default pet behavior uses visible standalone desktop-pet actions", () => {
 test("pet behavior accepts directional click and drag triggers", () => {
   const behavior = {
     triggers: {
+      hover: "sideClick",
       singleClickLeft: "clickLeft",
       singleClickRight: "clickRight",
       doubleClickLeft: "clickLeft",
       doubleClickRight: "clickRight",
       dragLeft: "clickLeft",
       dragRight: "clickRight",
+      dragUp: "liftUp",
     },
   };
 
   assert.deepStrictEqual(validatePetBehavior(behavior), { status: "ok" });
   assert.deepStrictEqual(normalizePetBehavior(behavior), {
     triggers: {
+      hover: "sideClick",
       singleClick: "sideClick",
       doubleClick: "annoyedOrSideClick",
       multiClick: "double",
@@ -47,6 +51,7 @@ test("pet behavior accepts directional click and drag triggers", () => {
       doubleClickRight: "clickRight",
       dragLeft: "clickLeft",
       dragRight: "clickRight",
+      dragUp: "liftUp",
     },
   });
 });
@@ -59,6 +64,7 @@ test("pet behavior migrates legacy agent actions to desktop-pet actions", () => 
     },
   }), {
     triggers: {
+      hover: "annoyedOrSideClick",
       singleClick: "sideClick",
       doubleClick: "annoyedOrSideClick",
       multiClick: "double",

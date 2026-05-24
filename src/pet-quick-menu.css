@@ -26,11 +26,20 @@ body {
   box-shadow: 0 12px 30px rgba(31, 35, 40, 0.18);
 }
 
+.scene-group {
+  height: 36px;
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: 9px;
+  overflow: hidden;
+  background: rgba(31, 35, 40, 0.04);
+}
+
 button {
   height: 36px;
-  min-width: 48px;
+  min-width: 42px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 0;
   padding: 0 10px;
   background: transparent;
   color: #1f2328;
@@ -48,9 +57,43 @@ button:active {
   background: #ffd9c7;
 }
 
+button:disabled {
+  cursor: default;
+  color: rgba(31, 35, 40, 0.35);
+  background: transparent;
+}
+
+.duration-btn {
+  min-width: 40px;
+  padding: 0 8px;
+  color: #c84519;
+  font-variant-numeric: tabular-nums;
+  border-left: 1px solid rgba(31, 35, 40, 0.08);
+}
+
+.scene-group.active {
+  background: #fff0e8;
+}
+
+.scene-group.active .scene-btn {
+  font-weight: 600;
+}
+
+.stop {
+  min-width: 42px;
+  border-radius: 9px;
+  color: #c84519;
+  font-weight: 600;
+}
+
+.stop:not(:disabled) {
+  background: #fff0e8;
+}
+
 .settings {
   margin-left: auto;
-  min-width: 52px;
+  min-width: 50px;
+  border-radius: 9px;
   color: #c84519;
   font-weight: 600;
   background: #fff4ee;

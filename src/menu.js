@@ -105,17 +105,44 @@ module.exports = function initMenu(ctx) {
 
   function buildTrayMenu() {
     if (!ctx.tray) return;
+    if (appMode.standalonePet) {
+      const items = [
+        {
+          label: t("startOnLogin"),
+          type: "checkbox",
+          checked: ctx.openAtLogin,
+          click: (menuItem) => { ctx.openAtLogin = menuItem.checked; },
+        },
+        { type: "separator" },
+        {
+          label: t("settings"),
+          click: () => ctx.openSettingsWindow(),
+        },
+        { type: "separator" },
+        {
+          label: ctx.petHidden ? t("showPet") : t("hidePet"),
+          click: () => ctx.togglePetVisibility(),
+        },
+        { type: "separator" },
+        { label: t("quit"), click: () => requestAppQuit() },
+      ];
+      ctx.tray.setContextMenu(Menu.buildFromTemplate(items));
+      return;
+    }
     const items = [
       {
         label: ctx.doNotDisturb ? t("wake") : t("sleep"),
         click: () => ctx.doNotDisturb ? ctx.disableDoNotDisturb() : ctx.enableDoNotDisturb(),
       },
-      buildMiniModeMenuItem(),
-      { type: "separator" },
       // Quick-toggle noise controls. Other settings (language, theme, bubble
       // follow, start-with-Claude, updates, etc.) were moved out of the tray
       // and now live only in the Settings panel / About tab.
     ];
+    if (!appMode.standalonePet) {
+      items.push(buildMiniModeMenuItem(), { type: "separator" });
+    } else {
+      items.push({ type: "separator" });
+    }
     if (!appMode.standalonePet) {
       items.push({
         label: t("hideBubbles"),
@@ -311,11 +338,16 @@ module.exports = function initMenu(ctx) {
   }
 
   function buildContextMenu() {
-    const template = [
-      {
-        ...buildMiniModeMenuItem(),
-      },
-      { type: "separator" },
+    const template = [];
+    if (!appMode.standalonePet) {
+      template.push(
+        {
+          ...buildMiniModeMenuItem(),
+        },
+        { type: "separator" },
+      );
+    }
+    template.push(
       {
         label: ctx.doNotDisturb ? t("wake") : t("sleep"),
         click: () => ctx.doNotDisturb ? ctx.disableDoNotDisturb() : ctx.enableDoNotDisturb(),
@@ -327,7 +359,7 @@ module.exports = function initMenu(ctx) {
           if (typeof ctx.openDashboard === "function") ctx.openDashboard();
         },
       }] : []),
-    ];
+    );
     // sendToDisplay is a multi-display-only tail entry. Push dynamically
     // (rather than visible:false) — Electron leaves a phantom gap for
     // hidden separators otherwise.

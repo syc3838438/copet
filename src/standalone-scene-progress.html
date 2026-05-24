@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self';">
+  <link rel="stylesheet" href="standalone-scene-progress.css">
+  <title>CoPets 场景进度</title>
+</head>
+<body>
+  <section class="progress-card" aria-label="场景进度">
+    <div class="progress-row">
+      <span class="scene-label">工作</span>
+      <span class="time-left">25:00</span>
+      <button type="button" class="stop-btn">停止</button>
+    </div>
+    <div class="bar" aria-hidden="true">
+      <div class="bar-fill"></div>
+    </div>
+  </section>
+  <script src="standalone-scene-progress-renderer.js"></script>
+</body>
+</html>

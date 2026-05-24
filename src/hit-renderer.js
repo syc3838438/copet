@@ -7,6 +7,7 @@ const gestureRouter = window.CoPetsGestureRouter;
 
 const DEFAULT_BEHAVIOR = {
   triggers: {
+    hover: "annoyedOrSideClick",
     singleClick: "sideClick",
     doubleClick: "annoyedOrSideClick",
     multiClick: "double",
@@ -16,6 +17,19 @@ const DEFAULT_BEHAVIOR = {
 };
 
 // ── Theme config (injected via preload-hit.js additionalArguments) ──
+const STANDALONE_DRAG_TAIL_MS = 1200;
+const STANDALONE_LIFT_TAIL_MS = 900;
+const STANDALONE_DRAG_THRESHOLD_PX = 8;
+const STANDALONE_HOVER_DURATION_MS = 3000;
+const STANDALONE_ACTION_DURATIONS = {
+  hover: STANDALONE_HOVER_DURATION_MS,
+  click: 840,
+  dragLeft: STANDALONE_DRAG_TAIL_MS,
+  dragRight: STANDALONE_DRAG_TAIL_MS,
+  liftUp: STANDALONE_LIFT_TAIL_MS,
+};
+const STANDALONE_QUICK_ACTIONS = new Set(["hover", "click", "dragLeft", "dragRight", "liftUp"]);
+
 let tc = window.hitThemeConfig || {};
 let _reactions = (tc && tc.reactions) || {};
 let _behavior = normalizeBehavior(tc && tc.behavior);
@@ -69,6 +83,8 @@ let didDrag = false;
 let mouseDownX, mouseDownY;
 let lastPointerX, lastPointerY;
 let dragGesture = null;
+let dragAccumX = 0;
+let dragAccumY = 0;
 let activeDragAction = null;
 let dragMoveRAF = null;
 const DRAG_THRESHOLD = gestureRouter && gestureRouter.DEFAULT_DRAG_THRESHOLD_PX
@@ -78,11 +94,17 @@ const DRAG_THRESHOLD = gestureRouter && gestureRouter.DEFAULT_DRAG_THRESHOLD_PX
 // --- Reaction state (tracked here to gate input) ---
 let isReacting = false;
 let isDragReacting = false;
+let reactionTimer = null;
+let lastHoverReactionAt = 0;
+const HOVER_REACTION_COOLDOWN_MS = 2500;
 
 // Cancel signal from main (e.g. state change)
 window.hitAPI.onCancelReaction(() => {
   if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; clickCount = 0; firstClickDir = null; }
+  if (reactionTimer) { clearTimeout(reactionTimer); reactionTimer = null; }
   dragGesture = null;
+  dragAccumX = 0;
+  dragAccumY = 0;
   isReacting = false;
   isDragReacting = false;
 });
@@ -105,11 +127,13 @@ function clearQueuedDragMove() {
 // --- Pointer handlers ---
 area.addEventListener("pointerdown", (e) => {
   if (e.button === 0) {
-    if (miniMode) { didDrag = false; return; }
+    if (miniMode && !isStandalonePet()) { didDrag = false; return; }
     area.setPointerCapture(e.pointerId);
     isDragging = true;
     didDrag = false;
     dragGesture = null;
+    dragAccumX = 0;
+    dragAccumY = 0;
     activeDragAction = null;
     mouseDownX = e.clientX;
     mouseDownY = e.clientY;
@@ -129,16 +153,22 @@ document.addEventListener("pointermove", (e) => {
     if (!didDrag) {
       if (Math.abs(totalDx) > DRAG_THRESHOLD || Math.abs(totalDy) > DRAG_THRESHOLD) {
         didDrag = true;
-        dragGesture = createDragGesture(totalDx, totalDy);
-        applyDragGesture(dragGesture);
+        dragGesture = isStandalonePet()
+          ? createStandaloneDragGesture(totalDx, totalDy)
+          : createDragGesture(totalDx, totalDy);
+        if (getDragDirection(dragGesture)) applyDragGesture(dragGesture);
       }
     } else {
-      const nextGesture = createDragGestureForMove(totalDx, totalDy, stepDx, stepDy);
-      if (shouldApplyDragGesture(nextGesture, dragGesture)) {
+      const nextGesture = isStandalonePet()
+        ? createStandaloneDragGestureForMove(totalDx, totalDy, stepDx, stepDy)
+        : createDragGestureForMove(totalDx, totalDy, stepDx, stepDy);
+      if (nextGesture && shouldApplyDragGesture(nextGesture, dragGesture)) {
         dragGesture = nextGesture;
         applyDragGesture(dragGesture);
-      } else {
+      } else if (nextGesture) {
         dragGesture = nextGesture;
+      } else {
+        dragGesture = createDragGesture(totalDx, totalDy, getDragDirection(dragGesture));
       }
     }
     lastPointerX = e.clientX;
@@ -150,15 +180,23 @@ document.addEventListener("pointermove", (e) => {
 function stopDrag() {
   if (!isDragging) return;
   clearQueuedDragMove();
+  const tailAction = isStandalonePet() ? activeDragAction : null;
+  const tailGesture = dragGesture;
   isDragging = false;
   dragGesture = null;
+  dragAccumX = 0;
+  dragAccumY = 0;
   activeDragAction = null;
   window.hitAPI.dragLock(false);
   area.classList.remove("dragging");
   if (didDrag) {
     window.hitAPI.dragEnd();
   }
-  endDragReaction();
+  if (tailAction) {
+    performAction(tailAction, { gesture: tailGesture, dragTail: true });
+  } else {
+    endDragReaction();
+  }
 }
 
 document.addEventListener("pointerup", (e) => {
@@ -178,6 +216,9 @@ document.addEventListener("pointerup", (e) => {
 area.addEventListener("pointercancel", () => stopDrag());
 area.addEventListener("lostpointercapture", () => { if (isDragging) stopDrag(); });
 window.addEventListener("blur", stopDrag);
+area.addEventListener("pointerenter", (e) => {
+  handleHover(e.clientX);
+});
 
 // --- Click reaction logic (2-click = poke, 4-click = flail) ---
 const CLICK_WINDOW_MS = 400;
@@ -201,7 +242,9 @@ function _resolveGestureAction(gesture, fallback) {
   }
   const trigger = gesture && gesture.kind === "drag"
     ? "dragStart"
-    : (gesture && gesture.kind === "contextMenu" ? "rightClick" : "singleClick");
+    : (gesture && gesture.kind === "contextMenu"
+      ? "rightClick"
+      : (gesture && gesture.kind === "hover" ? "hover" : "singleClick"));
   return _getTriggerAction(trigger, fallback);
 }
 
@@ -221,6 +264,13 @@ function createClickGesture(clickCount, side) {
   };
 }
 
+function createHoverGesture(side) {
+  return {
+    kind: "hover",
+    side,
+  };
+}
+
 function classifyDragDirection(dx, dy) {
   return gestureRouter && typeof gestureRouter.classifyDragDirection === "function"
     ? gestureRouter.classifyDragDirection(dx, dy)
@@ -231,9 +281,9 @@ function createDragGesture(dx, dy, directionOverride) {
   const drag = gestureRouter && typeof gestureRouter.classifyDrag === "function"
     ? gestureRouter.classifyDrag(dx, dy)
     : { dx, dy, direction: null, primaryAxis: Math.abs(dx) >= Math.abs(dy) ? "x" : "y" };
-  if (directionOverride === "left" || directionOverride === "right") {
+  if (directionOverride === "left" || directionOverride === "right" || directionOverride === "up") {
     drag.direction = directionOverride;
-    drag.primaryAxis = "x";
+    drag.primaryAxis = directionOverride === "up" ? "y" : "x";
   }
   return {
     kind: "drag",
@@ -246,8 +296,43 @@ function createDragGestureForMove(totalDx, totalDy, stepDx, stepDy) {
   return createDragGesture(totalDx, totalDy, stepDirection);
 }
 
+function classifyStandaloneDragDirection(dx, dy) {
+  if (gestureRouter && typeof gestureRouter.classifyDragDirection === "function") {
+    const direction = gestureRouter.classifyDragDirection(dx, dy, {
+      includeVertical: true,
+      thresholdPx: STANDALONE_DRAG_THRESHOLD_PX,
+    });
+    return direction === "down" ? null : direction;
+  }
+  const absX = Math.abs(dx);
+  const absY = Math.abs(dy);
+  if (absY >= STANDALONE_DRAG_THRESHOLD_PX && absY >= absX * 1.2 && dy < 0) return "up";
+  if (absX >= STANDALONE_DRAG_THRESHOLD_PX && absX >= absY * 1.2) return dx < 0 ? "left" : "right";
+  return null;
+}
+
+function createStandaloneDragGesture(totalDx, totalDy) {
+  return createDragGesture(totalDx, totalDy, classifyStandaloneDragDirection(totalDx, totalDy));
+}
+
+function createStandaloneDragGestureForMove(totalDx, totalDy, stepDx, stepDy) {
+  dragAccumX += stepDx;
+  dragAccumY += stepDy;
+  const direction = classifyStandaloneDragDirection(dragAccumX, dragAccumY);
+  if (!direction) return null;
+  dragAccumX = 0;
+  dragAccumY = 0;
+  return createDragGesture(totalDx, totalDy, direction);
+}
+
 function getDragDirection(gesture) {
-  return gesture && gesture.drag && (gesture.drag.direction === "left" || gesture.drag.direction === "right")
+  return gesture
+    && gesture.drag
+    && (
+      gesture.drag.direction === "left"
+      || gesture.drag.direction === "right"
+      || gesture.drag.direction === "up"
+    )
     ? gesture.drag.direction
     : null;
 }
@@ -288,18 +373,63 @@ function _pickReactionFile(reaction) {
   return files[Math.floor(Math.random() * files.length)];
 }
 
-function _playReactionByKey(reactionKey, fallbackDuration) {
+function _playReactionByKey(reactionKey, fallbackDuration, minDuration) {
   const reaction = _getReaction(reactionKey);
   const file = _pickReactionFile(reaction);
   if (!file) return false;
-  playReaction(file, reaction.duration || reaction.durationMs || fallbackDuration || 2500);
+  const rawDuration = reaction.duration || reaction.durationMs || fallbackDuration || 2500;
+  const duration = Number.isFinite(minDuration) ? Math.max(rawDuration, minDuration) : rawDuration;
+  playReaction(file, duration);
   return true;
 }
 
+function _playReactionByCandidates(reactionKeys, fallbackDuration, minDuration) {
+  for (const key of reactionKeys) {
+    if (_playReactionByKey(key, fallbackDuration, minDuration)) return true;
+  }
+  return false;
+}
+
+function getStandaloneReactionCandidates(action, meta = {}) {
+  switch (action) {
+    case "hover":
+      return ["hover", "double", "annoyed", "click", "clickLeft", "clickRight", "drag"];
+    case "click": {
+      const side = getGestureSide(meta);
+      return side === "right"
+        ? ["click", "clickRight", "clickLeft", "double"]
+        : ["click", "clickLeft", "clickRight", "double"];
+    }
+    case "dragLeft":
+      return ["dragLeft", "clickLeft", "drag"];
+    case "dragRight":
+      return ["dragRight", "clickRight", "drag"];
+    case "liftUp":
+      return ["liftUp", "click", "double", "clickLeft", "clickRight", "drag"];
+    default:
+      return [];
+  }
+}
+
+function performStandaloneAction(action, meta = {}) {
+  const duration = STANDALONE_ACTION_DURATIONS[action] || 1000;
+  const minDuration = action === "hover" ? STANDALONE_HOVER_DURATION_MS : null;
+  return _playReactionByCandidates(getStandaloneReactionCandidates(action, meta), duration, minDuration);
+}
+
 function performAction(action, meta = {}) {
+  if (isStandalonePet() && STANDALONE_QUICK_ACTIONS.has(action)) {
+    return performStandaloneAction(action, meta);
+  }
   switch (action) {
     case "none":
       return true;
+    case "hover":
+    case "click":
+    case "dragLeft":
+    case "dragRight":
+    case "liftUp":
+      return performStandaloneAction(action, meta);
     case "focusTerminal":
       window.hitAPI.focusTerminal();
       return true;
@@ -347,6 +477,13 @@ function performAction(action, meta = {}) {
 }
 
 function handleClick(clientX) {
+  if (isStandalonePet()) {
+    const side = gestureRouter && typeof gestureRouter.classifyClickSide === "function"
+      ? gestureRouter.classifyClickSide(clientX, area.offsetWidth)
+      : (clientX < area.offsetWidth / 2 ? "left" : "right");
+    performAction("click", { gesture: createClickGesture(1, side), firstClickDir: side });
+    return;
+  }
   if (miniMode) {
     window.hitAPI.exitMiniMode();
     return;
@@ -389,12 +526,31 @@ function handleClick(clientX) {
   }
 }
 
+function handleHover(clientX) {
+  if ((!isStandalonePet() && miniMode) || dndEnabled || isDragging || isReacting || isDragReacting) return;
+  const now = Date.now();
+  if (now - lastHoverReactionAt < HOVER_REACTION_COOLDOWN_MS) return;
+  const side = gestureRouter && typeof gestureRouter.classifyClickSide === "function"
+    ? gestureRouter.classifyClickSide(clientX, area.offsetWidth)
+    : (clientX < area.offsetWidth / 2 ? "left" : "right");
+  const gesture = createHoverGesture(side);
+  lastHoverReactionAt = now;
+  performAction(isStandalonePet() ? "hover" : _resolveGestureAction(gesture, "annoyedOrSideClick"), {
+    gesture,
+    firstClickDir: side,
+  });
+}
+
 function playReaction(svg, duration) {
   if (!svg) return;
+  if (reactionTimer) {
+    clearTimeout(reactionTimer);
+    reactionTimer = null;
+  }
   isReacting = true;
   window.hitAPI.playClickReaction(svg, duration);
   // Local timer to ungate input after duration
-  setTimeout(() => { isReacting = false; }, duration);
+  reactionTimer = setTimeout(() => { isReacting = false; reactionTimer = null; }, duration);
 }
 
 // --- Drag reaction ---
@@ -402,6 +558,19 @@ function applyDragGesture(gesture) {
   if (dndEnabled) return;
 
   const dragStartGesture = gesture || dragGesture || createDragGesture(0, 0);
+  if (isStandalonePet()) {
+    const direction = getDragDirection(dragStartGesture);
+    const action = direction === "left"
+      ? "dragLeft"
+      : (direction === "right" ? "dragRight" : (direction === "up" ? "liftUp" : null));
+    if (!action) return;
+    activeDragAction = action;
+    performAction(action, {
+      fromDragStart: true,
+      gesture: dragStartGesture,
+    });
+    return;
+  }
   const resolved = _resolveGesture(dragStartGesture, "drag");
   const action = resolved.action || "drag";
   if (action === activeDragAction && action === "drag" && isDragReacting) return;
@@ -443,6 +612,7 @@ if (window.hitAPI && typeof window.hitAPI.onQuickAction === "function") {
   window.hitAPI.onQuickAction((payload = {}) => {
     const action = typeof payload.action === "string" ? payload.action : "none";
     if (action === "none") return;
+    if (isStandalonePet() && !STANDALONE_QUICK_ACTIONS.has(action)) return;
     performAction(action, {
       quickAction: true,
       side: payload.side,

@@ -69,7 +69,6 @@
       parent.appendChild(helpers.buildSection(t("sectionAppearance"), [
         buildLanguageRow(),
         buildSizeSliderRow(),
-        buildSoundGroup(),
         helpers.buildSwitchRow({
           key: "lowPowerIdleMode",
           labelKey: "rowLowPowerIdleMode",

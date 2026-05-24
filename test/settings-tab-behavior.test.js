@@ -99,9 +99,10 @@ test("behavior settings tab renders Chinese directional rows with inherit defaul
   assert.ok(labels.includes("右侧双击动作"));
   assert.ok(labels.includes("向左拖动动作"));
   assert.ok(labels.includes("向右拖动动作"));
+  assert.ok(labels.includes("鼠标悬浮动作"));
 
   const selects = collect(parent, (node) => node.tagName === "select");
-  assert.strictEqual(selects.length, 11);
+  assert.strictEqual(selects.length, 12);
   assert.strictEqual(selects[1].value, "__inherit__");
   assert.strictEqual(selects[8].value, "__inherit__");
 });

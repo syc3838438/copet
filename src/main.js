@@ -40,6 +40,15 @@ const createThemeRuntime = require("./theme-runtime");
 const createFloatingWindowRuntime = require("./floating-window-runtime");
 const createPetWindowRuntime = require("./pet-window-runtime");
 const createPetQuickMenuRuntime = require("./pet-quick-menu");
+const createStandaloneSceneProgressRuntime = require("./standalone-scene-progress");
+const { resolveStandaloneSceneVisual } = require("./standalone-scene-visuals");
+const { DEFAULT_THEME_ID } = require("./default-theme");
+const {
+  isSceneId: isStandaloneSceneId,
+  normalizeStandaloneSceneDurations,
+  getNextDurationMinutes,
+  getSceneLabel,
+} = require("./standalone-scene");
 const {
   getFocusableLocalHudSessionIds: selectFocusableLocalHudSessionIds,
   getSessionFocusTarget,
@@ -184,7 +193,13 @@ let agentRuntime = null;
 let agentRegistry = null;
 let floatingWindowRuntime = null;
 let petQuickMenuRuntime = null;
+let standaloneSceneProgressRuntime = null;
 let codexPetMain = null;
+let standaloneScene = "normal";
+let standaloneSceneStartedAt = 0;
+let standaloneSceneEndsAt = 0;
+let standaloneSceneTotalMs = 0;
+let standaloneSceneTimer = null;
 let telegramApprovalSidecar = null;
 let telegramApprovalSyncPromise = Promise.resolve();
 let telegramApprovalConfigSignature = "";
@@ -291,6 +306,7 @@ function hydrateStandalonePetDefaults() {
   const partial = {};
   const snapshot = _settingsController.getSnapshot();
   if (!snapshot || snapshot.lang !== "zh") partial.lang = "zh";
+  if (snapshot && snapshot.miniMode) partial.miniMode = false;
   const normalizedBehavior = normalizePetBehavior(snapshot && snapshot.petBehavior);
   if (normalizedBehavior && JSON.stringify(normalizedBehavior) !== JSON.stringify(snapshot && snapshot.petBehavior)) {
     partial.petBehavior = normalizedBehavior;
@@ -322,7 +338,7 @@ function flushRuntimeStateToPrefs() {
     savedPixelWidth: bounds.width,
     savedPixelHeight: bounds.height,
     size: currentSize,
-    miniMode: _mini.getMiniMode(),
+    miniMode: STANDALONE_PET_MODE ? false : _mini.getMiniMode(),
     miniEdge: _mini.getMiniEdge(),
     preMiniX: _mini.getPreMiniX(),
     preMiniY: _mini.getPreMiniY(),
@@ -453,7 +469,7 @@ function getActiveTheme() {
 function getHitRendererConfig() {
   return {
     ...(themeRuntime.getHitRendererConfig() || {}),
-    behavior: _settingsController.get("petBehavior"),
+    behavior: STANDALONE_PET_MODE ? null : _settingsController.get("petBehavior"),
     standalonePet: STANDALONE_PET_MODE,
   };
 }
@@ -517,14 +533,14 @@ codexPetMain = createCodexPetMain({
 });
 const REGISTER_PROTOCOL_DEV_ARG = codexPetMain.REGISTER_PROTOCOL_DEV_ARG;
 // Lenient load so a missing/corrupt user-selected theme can't brick boot.
-// If lenient fell back to "clawd" OR the variant fell back to "default",
+// If lenient fell back to the bundled default theme OR the variant fell back to "default",
 // hydrate prefs to match so the store stays truth.
 //
 // Startup runs BEFORE the window is ready, so we call the runtime's initial
 // load path, not activateTheme (which requires ready windows) and not the
 // setThemeSelection command (which goes through activateTheme). The runtime
 // switch path via UI goes through setThemeSelection post-window-ready.
-let _requestedThemeId = _settingsController.get("theme") || "clawd";
+let _requestedThemeId = _settingsController.get("theme") || DEFAULT_THEME_ID;
 const _initialVariantMap = _settingsController.get("themeVariant") || {};
 let _requestedVariantId = _initialVariantMap[_requestedThemeId] || "default";
 const _initialThemeOverrides = _settingsController.get("themeOverrides") || {};
@@ -537,7 +553,7 @@ if (codexPetMain.summaryHasActiveOrphan(_startupCodexPetSyncSummary, _requestedT
   delete nextVariantMap[orphanThemeId];
   delete nextOverrides[orphanThemeId];
 
-  _requestedThemeId = "clawd";
+  _requestedThemeId = DEFAULT_THEME_ID;
   _requestedVariantId = nextVariantMap[_requestedThemeId] || "default";
   _requestedThemeOverrides = nextOverrides[_requestedThemeId] || null;
   const result = _settingsController.hydrate({
@@ -754,6 +770,11 @@ function syncRendererStateAfterLoad({ includeStartupRecovery = true } = {}) {
   }
   if (_mini.getMiniMode()) {
     applyState("mini-idle");
+    return;
+  }
+
+  if (STANDALONE_PET_MODE) {
+    applyStandaloneSceneVisual(standaloneScene);
     return;
   }
 
@@ -986,7 +1007,9 @@ function repositionFloatingBubbles() {
 }
 
 function repositionAnchoredFloatingSurfaces() {
-  return floatingWindowRuntime.repositionAnchoredSurfaces();
+  const result = floatingWindowRuntime.repositionAnchoredSurfaces();
+  if (standaloneSceneProgressRuntime) standaloneSceneProgressRuntime.reposition();
+  return result;
 }
 
 function syncSessionHudVisibilityAndBubbles() {
@@ -1086,6 +1109,112 @@ const { setState, applyState, updateSession, resolveDisplayState, getSvgOverride
         startStartupRecovery: _startStartupRecovery } = _state;
 const sessions = _state.sessions;
 
+function normalizeStandaloneScene(scene) {
+  return scene === "normal" || isStandaloneSceneId(scene) ? scene : "normal";
+}
+
+function getStandaloneSceneDurations() {
+  return normalizeStandaloneSceneDurations(_settingsController.get("standaloneSceneDurations"));
+}
+
+function getStandaloneSceneVisual(scene) {
+  return resolveStandaloneSceneVisual({
+    scene,
+    theme: getActiveTheme(),
+    getSvgOverride,
+  });
+}
+
+function getStandaloneSceneProgressState() {
+  const durations = getStandaloneSceneDurations();
+  const activeScene = isStandaloneSceneId(standaloneScene) ? standaloneScene : null;
+  const now = Date.now();
+  const remainingMs = activeScene ? Math.max(0, standaloneSceneEndsAt - now) : 0;
+  const elapsedMs = activeScene ? Math.max(0, now - standaloneSceneStartedAt) : 0;
+  const progress = activeScene && standaloneSceneTotalMs > 0
+    ? Math.max(0, Math.min(1, elapsedMs / standaloneSceneTotalMs))
+    : 0;
+  return {
+    active: !!activeScene && remainingMs > 0,
+    activeScene,
+    label: activeScene ? getSceneLabel(activeScene) : "",
+    durations,
+    remainingMs,
+    totalMs: activeScene ? standaloneSceneTotalMs : 0,
+    progress,
+  };
+}
+
+function broadcastStandaloneSceneState() {
+  if (standaloneSceneProgressRuntime) {
+    standaloneSceneProgressRuntime.update(getStandaloneSceneProgressState());
+  }
+  if (petQuickMenuRuntime && typeof petQuickMenuRuntime.sendState === "function") {
+    petQuickMenuRuntime.sendState();
+  }
+}
+
+function clearStandaloneSceneTimer() {
+  if (standaloneSceneTimer) {
+    clearInterval(standaloneSceneTimer);
+    standaloneSceneTimer = null;
+  }
+}
+
+function applyStandaloneSceneVisual(scene) {
+  if (!STANDALONE_PET_MODE) return false;
+  standaloneScene = normalizeStandaloneScene(scene);
+  const visual = getStandaloneSceneVisual(standaloneScene);
+  applyState(visual.state, visual.svg);
+  broadcastStandaloneSceneState();
+  return true;
+}
+
+function finishStandaloneScene() {
+  if (!STANDALONE_PET_MODE) return;
+  clearStandaloneSceneTimer();
+  standaloneSceneStartedAt = 0;
+  standaloneSceneEndsAt = 0;
+  standaloneSceneTotalMs = 0;
+  applyStandaloneSceneVisual("normal");
+}
+
+function tickStandaloneSceneTimer() {
+  if (!isStandaloneSceneId(standaloneScene)) return;
+  if (Date.now() >= standaloneSceneEndsAt) {
+    finishStandaloneScene();
+    return;
+  }
+  broadcastStandaloneSceneState();
+}
+
+function startStandaloneScene(scene) {
+  if (!STANDALONE_PET_MODE || !isStandaloneSceneId(scene)) return false;
+  const durations = getStandaloneSceneDurations();
+  clearStandaloneSceneTimer();
+  standaloneSceneStartedAt = Date.now();
+  standaloneSceneTotalMs = durations[scene] * 60 * 1000;
+  standaloneSceneEndsAt = standaloneSceneStartedAt + standaloneSceneTotalMs;
+  applyStandaloneSceneVisual(scene);
+  standaloneSceneTimer = setInterval(tickStandaloneSceneTimer, 1000);
+  return true;
+}
+
+function cycleStandaloneSceneDuration(scene) {
+  if (!STANDALONE_PET_MODE || !isStandaloneSceneId(scene)) return false;
+  const current = getStandaloneSceneDurations();
+  const next = {
+    ...current,
+    [scene]: getNextDurationMinutes(current[scene]),
+  };
+  const result = _settingsController.applyUpdate("standaloneSceneDurations", next);
+  if (result && result.status === "ok") {
+    broadcastStandaloneSceneState();
+    return true;
+  }
+  return false;
+}
+
 // ── Hit-test: SVG bounding box → screen coordinates ──
 function getHitRectScreen(bounds) { return petWindowRuntime.getHitRectScreen(bounds); }
 function getUpdateBubbleAnchorRect(bounds) { return petWindowRuntime.getUpdateBubbleAnchorRect(bounds); }
@@ -1115,6 +1244,7 @@ const _tickCtx = {
   set forceEyeResend(v) { setForceEyeResend(v); },
   get forceEyeResendBoostUntil() { return forceEyeResendBoostUntil; },
   get startupRecoveryActive() { return _state.getStartupRecoveryActive(); },
+  get suppressIdleAutomation() { return STANDALONE_PET_MODE && standaloneScene !== "normal"; },
   sendToRenderer,
   sendToHitWin,
   setState,
@@ -1643,7 +1773,7 @@ const _menuCtx = {
   getNearestWorkArea,
   reapplyMacVisibility,
   discoverThemes: () => themeLoader.discoverThemes(),
-  getActiveThemeId: () => themeRuntime.getActiveThemeId("clawd"),
+  getActiveThemeId: () => themeRuntime.getActiveThemeId(DEFAULT_THEME_ID),
   getActiveThemeCapabilities: () => themeRuntime.getActiveThemeCapabilities(),
   ensureUserThemesDir: () => themeLoader.ensureUserThemesDir(),
   openSettingsWindow: () => settingsWindowRuntime.open(),
@@ -1654,6 +1784,17 @@ const { t, buildContextMenu, buildTrayMenu, rebuildAllMenus, createTray,
         requestAppQuit, applyDockVisibility } = _menu;
 
 // ── Settings effect router ──
+standaloneSceneProgressRuntime = createStandaloneSceneProgressRuntime({
+  BrowserWindow,
+  ipcMain,
+  screen,
+  path,
+  guardAlwaysOnTop,
+  keepOutOfTaskbar,
+  getAnchorBounds: () => getPetWindowBounds(),
+  onStopScene: () => finishStandaloneScene(),
+});
+
 petQuickMenuRuntime = createPetQuickMenuRuntime({
   BrowserWindow,
   ipcMain,
@@ -1665,7 +1806,13 @@ petQuickMenuRuntime = createPetQuickMenuRuntime({
   enableDoNotDisturb: () => enableDoNotDisturb(),
   disableDoNotDisturb: () => disableDoNotDisturb(),
   openSettingsWindow: () => settingsWindowRuntime.open(),
-  sendToHitWin,
+  getAnchorBounds: () => standaloneSceneProgressRuntime
+    ? standaloneSceneProgressRuntime.getMenuAnchorBounds(getPetWindowBounds())
+    : getPetWindowBounds(),
+  getState: () => getStandaloneSceneProgressState(),
+  onSelectScene: (scene) => startStandaloneScene(scene),
+  onCycleDuration: (scene) => cycleStandaloneSceneDuration(scene),
+  onStopScene: () => finishStandaloneScene(),
 });
 
 const SETTINGS_MIRROR_SETTERS = {
@@ -1906,6 +2053,9 @@ function createWindow() {
   // (lang/showTray/etc.) were already initialized at module-load time, so
   // here we just need the position/mini fields plus the legacy size migration.
   let prefs = _settingsController.getSnapshot();
+  if (STANDALONE_PET_MODE && prefs && prefs.miniMode) {
+    prefs = { ...prefs, miniMode: false };
+  }
   // Legacy S/M/L → P:N migration. Only kicks in for prefs files that haven't
   // been touched since v0; new files always store the proportional form.
   if (SIZES[prefs.size]) {
@@ -1915,6 +2065,9 @@ function createWindow() {
     const migrated = `P:${Math.max(1, Math.min(75, ratio))}`;
     _settingsController.applyUpdate("size", migrated); // subscriber updates currentSize mirror
     prefs = _settingsController.getSnapshot();
+    if (STANDALONE_PET_MODE && prefs && prefs.miniMode) {
+      prefs = { ...prefs, miniMode: false };
+    }
   }
   // macOS: apply dock visibility (default visible — but persisted state wins).
   if (isMac) {
@@ -2295,6 +2448,8 @@ if (!gotTheLock) {
     _sessionHud.cleanup();
     agentRuntime.cleanup();
     if (petQuickMenuRuntime) petQuickMenuRuntime.cleanup();
+    if (standaloneSceneProgressRuntime) standaloneSceneProgressRuntime.cleanup();
+    clearStandaloneSceneTimer();
     topmostRuntime.cleanup();
     themeRuntime.cleanup();
     _focus.cleanup();

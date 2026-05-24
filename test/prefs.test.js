@@ -466,6 +466,26 @@ describe("prefs.validate", () => {
     assert.deepStrictEqual(w.themeVariant, {});
   });
 
+  it("standaloneSceneDurations defaults and normalizes to preset minutes", () => {
+    assert.deepStrictEqual(prefs.getDefaults().standaloneSceneDurations, {
+      work: 25,
+      play: 15,
+      rest: 5,
+    });
+    assert.deepStrictEqual(prefs.validate({
+      standaloneSceneDurations: {
+        work: 45,
+        play: 13,
+        rest: 120,
+        extra: 25,
+      },
+    }).standaloneSceneDurations, {
+      work: 45,
+      play: 15,
+      rest: 120,
+    });
+  });
+
   it("sessionAliases normalizes valid entries and drops malformed values", () => {
     const v = prefs.validate({
       sessionAliases: {

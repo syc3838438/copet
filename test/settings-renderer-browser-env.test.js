@@ -1181,6 +1181,15 @@ describe("settings renderer browser environment", () => {
     assert.ok(!html.includes("<style>"));
   });
 
+  it("standalone settings renderer exposes only general and theme tabs", () => {
+    const source = fs.readFileSync(SETTINGS_RENDERER, "utf8");
+    assert.ok(source.includes('new Set(["general", "theme"])'));
+    assert.ok(source.includes("!APP_MODE.standalonePet && globalThis.ClawdSettingsTabBehavior"));
+    assert.ok(source.includes("if (!APP_MODE.standalonePet)"));
+    assert.ok(source.includes("ClawdSettingsTabAnimMap.init(core)"));
+    assert.ok(source.includes("ClawdSettingsTabAnimOverrides.init(core)"));
+  });
+
   it("uses browser globals instead of CommonJS in settings renderer modules", () => {
     const rendererSource = fs.readFileSync(SETTINGS_RENDERER, "utf8");
     const coreSource = fs.readFileSync(SETTINGS_UI_CORE, "utf8");

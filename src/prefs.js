@@ -34,6 +34,8 @@ const {
 } = require("./bubble-policy");
 const { normalizeSessionAliases } = require("./session-alias");
 const { cloneDefaultBehavior, normalizePetBehavior } = require("./pet-behavior");
+const { normalizeStandaloneSceneDurations } = require("./standalone-scene");
+const { DEFAULT_THEME_ID, normalizeDefaultThemeId } = require("./default-theme");
 
 const CURRENT_VERSION = 3;
 
@@ -132,7 +134,7 @@ const SCHEMA = {
     normalize: normalizeShortcuts,
   },
   // Theme
-  theme: { type: "string", default: "clawd" },
+  theme: { type: "string", default: DEFAULT_THEME_ID, normalize: normalizeDefaultThemeId },
   // Phase 2/3 placeholders — schema reserves the keys so future migrations don't need v2.
   agents: {
     type: "object",
@@ -169,6 +171,11 @@ const SCHEMA = {
     type: "object",
     defaultFactory: () => cloneDefaultBehavior(),
     normalize: normalizePetBehavior,
+  },
+  standaloneSceneDurations: {
+    type: "object",
+    defaultFactory: () => normalizeStandaloneSceneDurations(),
+    normalize: normalizeStandaloneSceneDurations,
   },
   sessionAliases: {
     type: "object",
@@ -219,7 +226,7 @@ function isValidValue(field, value) {
 }
 
 // Coerce an arbitrary object into a valid snapshot — drop bad fields, fill
-// missing fields from defaults, run normalize() on objects.
+// missing fields from defaults, run normalize() on fields that provide it.
 function validate(raw) {
   const out = getDefaults();
   if (!raw || typeof raw !== "object") return out;
@@ -227,7 +234,7 @@ function validate(raw) {
     if (!(key in raw)) continue;
     const field = SCHEMA[key];
     let value = raw[key];
-    if (field.type === "object" && typeof field.normalize === "function") {
+    if (typeof field.normalize === "function") {
       value = field.normalize(value, out[key]);
     }
     if (isValidValue(field, value)) {

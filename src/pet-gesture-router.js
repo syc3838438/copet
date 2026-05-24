@@ -13,10 +13,12 @@
   const DEFAULT_DRAG_AXIS_RATIO = 1.2;
 
   const DEFAULT_TRIGGER_ACTIONS = Object.freeze({
+    hover: "annoyedOrSideClick",
     singleClick: "sideClick",
     doubleClick: "annoyedOrSideClick",
     multiClick: "double",
     dragStart: "drag",
+    dragUp: "liftUp",
     rightClick: "quickMenu",
   });
 
@@ -32,6 +34,7 @@
     dragStart: Object.freeze({
       left: "dragLeft",
       right: "dragRight",
+      up: "dragUp",
     }),
   });
 
@@ -101,6 +104,7 @@
 
   function getBaseTriggerForGesture(gesture) {
     if (!isPlainObject(gesture)) return null;
+    if (gesture.kind === "hover") return "hover";
     if (gesture.kind === "contextMenu") return "rightClick";
     if (gesture.kind === "drag") return "dragStart";
     if (gesture.kind === "click") {
@@ -114,12 +118,12 @@
 
   function getGestureDirection(gesture) {
     if (!isPlainObject(gesture)) return null;
-    if (gesture.kind === "click") {
+    if (gesture.kind === "click" || gesture.kind === "hover") {
       return gesture.side === "left" || gesture.side === "right" ? gesture.side : null;
     }
     if (gesture.kind === "drag" && isPlainObject(gesture.drag)) {
       const direction = gesture.drag.direction;
-      return direction === "left" || direction === "right" ? direction : null;
+      return direction === "left" || direction === "right" || direction === "up" ? direction : null;
     }
     return null;
   }

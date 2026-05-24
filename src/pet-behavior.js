@@ -5,6 +5,11 @@ const ACTIONS = new Set([
   "contextMenu",
   "quickMenu",
   "drag",
+  "dragLeft",
+  "dragRight",
+  "liftUp",
+  "hover",
+  "click",
   "clickLeft",
   "clickRight",
   "sideClick",
@@ -14,6 +19,7 @@ const ACTIONS = new Set([
 ]);
 
 const TRIGGERS = new Set([
+  "hover",
   "singleClick",
   "singleClickLeft",
   "singleClickRight",
@@ -24,11 +30,13 @@ const TRIGGERS = new Set([
   "dragStart",
   "dragLeft",
   "dragRight",
+  "dragUp",
   "rightClick",
 ]);
 
 const DEFAULT_BEHAVIOR = Object.freeze({
   triggers: Object.freeze({
+    hover: "annoyedOrSideClick",
     singleClick: "sideClick",
     doubleClick: "annoyedOrSideClick",
     multiClick: "double",

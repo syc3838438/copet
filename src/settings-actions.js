@@ -115,6 +115,7 @@ const {
   validateTelegramBotToken,
 } = require("./telegram-approval-settings");
 const { validatePetBehavior } = require("./pet-behavior");
+const { isValidStandaloneSceneDurations } = require("./standalone-scene");
 
 // ── updateRegistry ──
 // Maps prefs field name → validator. Controller looks up by key and runs.
@@ -184,6 +185,11 @@ const updateRegistry = {
   allowEdgePinning: requireBoolean("allowEdgePinning"),
   keepSizeAcrossDisplays: requireBoolean("keepSizeAcrossDisplays"),
   petBehavior: validatePetBehavior,
+  standaloneSceneDurations(value) {
+    return isValidStandaloneSceneDurations(value)
+      ? { status: "ok" }
+      : { status: "error", message: "standaloneSceneDurations must contain preset minutes for work/play/rest" };
+  },
 
   // ── System-backed prefs (object-form: validate + effect pre-commit gate) ──
   autoStartWithClaude,

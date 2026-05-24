@@ -604,6 +604,10 @@ window.electronAPI.onEndDragReaction(() => endDragReaction());
 window.electronAPI.onPlayClickReaction((svg, duration) => playReaction(svg, duration));
 
 function playReaction(svgFile, durationMs) {
+  if (reactTimer) {
+    clearTimeout(reactTimer);
+    reactTimer = null;
+  }
   isReacting = true;
   detachEyeTracking();
   resumeCurrentSvgForLowPower();

@@ -211,13 +211,29 @@ describe("updateRegistry pure-data validators", () => {
         doubleClickRight: "clickRight",
         dragLeft: "clickLeft",
         dragRight: "clickRight",
+        dragUp: "liftUp",
       },
     }, deps).status, "ok");
     assert.strictEqual(updateRegistry.petBehavior({
       triggers: {
-        dragUp: "drag",
+        dragUp: "not-real",
       },
     }, deps).status, "error");
+  });
+
+  it("standaloneSceneDurations accepts only preset scene durations", () => {
+    const deps = { snapshot: baseSnapshot };
+    assert.strictEqual(updateRegistry.standaloneSceneDurations({
+      work: 25,
+      play: 15,
+      rest: 5,
+    }, deps).status, "ok");
+    assert.strictEqual(updateRegistry.standaloneSceneDurations({
+      work: 25,
+      play: 13,
+      rest: 5,
+    }, deps).status, "error");
+    assert.strictEqual(updateRegistry.standaloneSceneDurations(null, deps).status, "error");
   });
 
   it("tgApproval validates the settings object while allowing incomplete saved config", () => {
